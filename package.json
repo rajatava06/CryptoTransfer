@@ -4,7 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host",
+    "signal": "node server/signaling.cjs",
+    "dev:all": "concurrently --names \"VITE,SIGNAL\" --prefix-colors \"cyan,magenta\" \"npm run dev\" \"npm run signal\"",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"
@@ -19,10 +21,12 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "concurrently": "^10.0.0",
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
-    "vite": "^8.0.12"
+    "vite": "^8.0.12",
+    "ws": "^8.21.0"
   }
 }
