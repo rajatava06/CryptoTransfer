@@ -39,7 +39,13 @@ const PEER_CFG = {
 const CHUNK_SIZE = 16384; // 16 KB
 
 /* ─── Helpers ──────────────────────────────────────────────── */
-const genCode  = () => `CT-${Math.random().toString(36).slice(2,7).toUpperCase()}`;
+/* High-entropy code — 32^7 ≈ 34 billion combinations, timestamp-seeded */
+const genCode = () => {
+  const CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous chars
+  const bytes = crypto.getRandomValues(new Uint8Array(7));
+  const rand  = Array.from(bytes, b => CHARS[b % CHARS.length]).join('');
+  return `CT-${rand}`;
+};
 const fmtBytes = (b) => {
   if (!b) return '0 B';
   const k = 1024, u = ['B', 'KB', 'MB', 'GB'];
@@ -70,33 +76,71 @@ async function decryptFile(encBuf, keyB64, ivB64) {
   );
 }
 
-/* ─── usePeer hook ─────────────────────────────────────────── */
-function usePeer(myCode) {
-  const [status,   setStatus]   = useState('connecting'); // connecting|connected|error
-  const [errMsg,   setErrMsg]   = useState('');
-  const peerRef = useRef(null);
+/* ─── usePeer hook ─────────────────────────────────────────────
+ * Code is generated INSIDE the hook so that React Strict Mode's
+ * double-mount always gets a fresh ID on the second (real) mount.
+ * On unavailable-id collision it auto-retries with a new code.
+ * myCode is only exposed after the peer successfully opens.
+ * ─────────────────────────────────────────────────────────────── */
+function usePeer() {
+  const [myCode,  setMyCode]  = useState('');          // set after open
+  const [status,  setStatus]  = useState('connecting');
+  const [errMsg,  setErrMsg]  = useState('');
+  const peerRef   = useRef(null);
+  const activeRef = useRef(true); // false when effect cleanup ran
 
   useEffect(() => {
-    if (!myCode) return;
-    const p = new Peer(myCode, PEER_CFG);
-    peerRef.current = p;
+    activeRef.current = true;
 
-    p.on('open',         ()    => setStatus('connected'));
-    p.on('disconnected', ()    => { setStatus('error'); p.reconnect(); });
-    p.on('error',        (err) => {
-      if (err.type === 'unavailable-id') {
-        // Collision — handled by parent regenerating the code
-        setErrMsg('Peer ID collision — refreshing…');
-      } else {
+    function create() {
+      if (!activeRef.current) return;
+      const code = genCode(); // fresh code every attempt
+      const p    = new Peer(code, PEER_CFG);
+      peerRef.current = p;
+
+      p.on('open', () => {
+        if (!activeRef.current) { p.destroy(); return; }
+        setMyCode(code);
+        setStatus('connected');
+        setErrMsg('');
+      });
+
+      p.on('disconnected', () => {
+        if (!activeRef.current) return;
         setStatus('error');
-        setErrMsg(err.message || err.type);
+        setTimeout(() => { if (activeRef.current) p.reconnect(); }, 1000);
+      });
+
+      p.on('error', (err) => {
+        if (!activeRef.current) return;
+        if (err.type === 'unavailable-id') {
+          /* ID taken (Strict Mode double-mount or real collision) — just retry */
+          p.destroy();
+          setTimeout(create, 150);
+        } else {
+          setStatus('error');
+          setErrMsg(err.type === 'server-error'
+            ? 'PeerJS server unreachable — check your network'
+            : (err.message || err.type)
+          );
+        }
+      });
+    }
+
+    create();
+
+    return () => {
+      activeRef.current = false;
+      if (peerRef.current) {
+        peerRef.current.destroy();
+        peerRef.current = null;
       }
-    });
+      setMyCode('');
+      setStatus('connecting');
+    };
+  }, []); // eslint-disable-line
 
-    return () => { p.destroy(); peerRef.current = null; };
-  }, [myCode]);
-
-  return { peerRef, status, errMsg };
+  return { peerRef, myCode, status, errMsg };
 }
 
 /* ─── Status badge ─────────────────────────────────────────── */
@@ -196,8 +240,7 @@ function ProgressBlock({ pct, bytes, total, speed, elapsed, color, label, encryp
  *  SENDER PANEL
  * ══════════════════════════════════════════════════════════════ */
 function SenderPanel({ addToast }) {
-  const [myCode]              = useState(genCode);
-  const { peerRef, status, errMsg } = usePeer(myCode);
+  const { peerRef, myCode, status, errMsg } = usePeer();
 
   const [targetCode, setTarget] = useState('');
   const [phase, setPhase]       = useState('idle');   // idle|connected|awaiting|encrypting|sending|done
@@ -502,8 +545,7 @@ function SenderPanel({ addToast }) {
  *  RECEIVER PANEL
  * ══════════════════════════════════════════════════════════════ */
 function ReceiverPanel({ addToast }) {
-  const [myCode]              = useState(genCode);
-  const { peerRef, status, errMsg } = usePeer(myCode);
+  const { peerRef, myCode, status, errMsg } = usePeer();
 
   const [phase, setPhase]       = useState('waiting');
   const [incoming, setIncoming] = useState(null);     // { name, size }
