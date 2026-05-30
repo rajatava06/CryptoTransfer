@@ -1281,14 +1281,18 @@ a:hover {
   /* ── Navigation tabs ── */
   .nav-tabs {
     margin: 1rem auto;
-    width: 100%;
+    /* Center when all tabs fit; scroll when they don't */
+    width: fit-content;
+    max-width: calc(100% - 2rem);
     padding: 0.3rem;
     gap: 0.3rem;
-    /* Let tabs scroll horizontally without showing scrollbar */
     overflow-x: auto;
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
-    justify-content: flex-start;
+    justify-content: center;
+    /* Keep it centered on the page */
+    display: flex;
+    left: 50%;
   }
 
   .nav-tabs::-webkit-scrollbar {
