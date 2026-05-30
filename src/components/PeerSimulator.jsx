@@ -1,54 +1,161 @@
 /**
- * PeerSimulator.jsx – Real WebRTC P2P File Transfer
- * ───────────────────────────────────────────────────
- * Uses RTCPeerConnection + RTCDataChannel for actual peer-to-peer
- * transfers.  A lightweight WebSocket signaling server
- * (server/signaling.cjs) handles only the handshake — no file data
- * ever passes through the server.
+ * PeerSimulator.jsx – Real WebRTC P2P via PeerJS
+ * ─────────────────────────────────────────────────
+ * Uses PeerJS (free cloud signaling at 0.peerjs.com over WSS).
+ * Works on Vercel and any HTTPS host — no local server needed.
  *
- * Works:
- *  • Same tab / same browser  (dev / demo)
- *  • Different tabs / different browsers on the same machine
- *  • Different laptops on the same LAN  ← new!
- *  • Different networks (if you expose the signaling server)
+ * Features:
+ *  • AES-256-GCM file encryption before DataChannel send
+ *  • Encryption key exchanged safely via the WebRTC DTLS channel
+ *  • Real progress tracking with speed + elapsed time
+ *  • Works across different devices / networks globally
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import Peer from 'peerjs';
 import {
   Share2, Upload, File, ShieldCheck, Zap, Activity,
   X, Radio, CheckCircle2, ArrowRight, ArrowLeft,
-  Download, Bell, Copy, ArrowDown, Wifi, WifiOff, AlertCircle,
+  Download, Bell, Copy, ArrowDown, Wifi, WifiOff,
+  AlertCircle, Lock, Unlock,
 } from 'lucide-react';
 
-/* ─── Constants ─────────────────────────────────────────────── */
-const ICE_SERVERS = [
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' },
-  { urls: 'stun:stun2.l.google.com:19302' },
-];
-const CHUNK_SIZE = 16384; // 16 KB — safe DataChannel chunk size
-const SIGNAL_PORT = 9001;
+/* ─── PeerJS config ────────────────────────────────────────── */
+const PEER_CFG = {
+  host:   '0.peerjs.com',
+  port:   443,
+  path:   '/',
+  secure: true,           // wss:// — required on HTTPS / Vercel
+  debug:  0,
+  config: {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+    ],
+  },
+};
 
-/* ─── Helpers ───────────────────────────────────────────────── */
-const genCode = () => `CRYPTO-P2P-${Math.floor(1000 + Math.random() * 9000)}`;
+const CHUNK_SIZE = 16384; // 16 KB
+
+/* ─── Helpers ──────────────────────────────────────────────── */
+const genCode  = () => `CT-${Math.random().toString(36).slice(2,7).toUpperCase()}`;
 const fmtBytes = (b) => {
-  if (!b || b === 0) return '0 B';
+  if (!b) return '0 B';
   const k = 1024, u = ['B', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(b) / Math.log(k));
   return `${parseFloat((b / k ** i).toFixed(2))} ${u[i]}`;
 };
-const getSignalURL = () => `ws://${window.location.hostname}:${SIGNAL_PORT}`;
+
+/* ─── AES-256-GCM ──────────────────────────────────────────── */
+const buf2b64 = (b) => btoa(String.fromCharCode(...new Uint8Array(b)));
+const b642buf = (s) => Uint8Array.from(atob(s), c => c.charCodeAt(0)).buffer;
+
+async function encryptFile(buf) {
+  const key = await crypto.subtle.generateKey(
+    { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']
+  );
+  const iv  = crypto.getRandomValues(new Uint8Array(12));
+  const enc = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, buf);
+  const raw = await crypto.subtle.exportKey('raw', key);
+  return { enc, keyB64: buf2b64(raw), ivB64: buf2b64(iv.buffer) };
+}
+
+async function decryptFile(encBuf, keyB64, ivB64) {
+  const key = await crypto.subtle.importKey(
+    'raw', b642buf(keyB64), { name: 'AES-GCM', length: 256 }, false, ['decrypt']
+  );
+  return crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: new Uint8Array(b642buf(ivB64)) }, key, encBuf
+  );
+}
+
+/* ─── usePeer hook ─────────────────────────────────────────── */
+function usePeer(myCode) {
+  const [status,   setStatus]   = useState('connecting'); // connecting|connected|error
+  const [errMsg,   setErrMsg]   = useState('');
+  const peerRef = useRef(null);
+
+  useEffect(() => {
+    if (!myCode) return;
+    const p = new Peer(myCode, PEER_CFG);
+    peerRef.current = p;
+
+    p.on('open',         ()    => setStatus('connected'));
+    p.on('disconnected', ()    => { setStatus('error'); p.reconnect(); });
+    p.on('error',        (err) => {
+      if (err.type === 'unavailable-id') {
+        // Collision — handled by parent regenerating the code
+        setErrMsg('Peer ID collision — refreshing…');
+      } else {
+        setStatus('error');
+        setErrMsg(err.message || err.type);
+      }
+    });
+
+    return () => { p.destroy(); peerRef.current = null; };
+  }, [myCode]);
+
+  return { peerRef, status, errMsg };
+}
+
+/* ─── Status badge ─────────────────────────────────────────── */
+function StatusBadge({ status, errMsg }) {
+  const cfg = {
+    connecting: { c: 'var(--color-warning)', ic: <Activity size={11} />, t: 'Connecting to PeerJS cloud…' },
+    connected:  { c: 'var(--color-success)', ic: <Wifi     size={11} />, t: 'Connected — ready for transfer' },
+    error:      { c: 'var(--color-error)',   ic: <WifiOff  size={11} />, t: errMsg || 'Connection error' },
+  };
+  const s = cfg[status] || cfg.connecting;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.71rem', color: s.c,
+      background: `${s.c}18`, border: `1px solid ${s.c}45`, borderRadius: 7, padding: '0.3rem 0.65rem', marginBottom: '0.8rem' }}>
+      {s.ic}<span>{s.t}</span>
+    </div>
+  );
+}
+
+/* ─── Code box ─────────────────────────────────────────────── */
+function CodeBox({ code, label, color, hint }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText(code);
+    setCopied(true); setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <div style={{ background: `${color}0e`, border: `1px solid ${color}35`, borderRadius: 9,
+      padding: '0.6rem 0.8rem', marginBottom: '0.8rem' }}>
+      <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: '0.2rem' }}>{label}</div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 5 }}>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.92rem', fontWeight: 700, color, letterSpacing: '0.06em' }}>
+          {code || '…'}
+        </span>
+        <button onClick={copy}
+          style={{ background: copied ? 'var(--color-success-glow)' : `${color}18`,
+            border: `1px solid ${copied ? 'var(--color-success)' : color + '40'}`,
+            borderRadius: 6, cursor: 'pointer',
+            color: copied ? 'var(--color-success)' : color,
+            padding: '0.18rem 0.55rem', fontSize: '0.68rem',
+            display: 'flex', alignItems: 'center', gap: 3,
+            transition: 'all 0.2s', flexShrink: 0 }}>
+          <Copy size={10} />{copied ? 'Copied!' : 'Copy'}
+        </button>
+      </div>
+      {hint && <p style={{ fontSize: '0.66rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>{hint}</p>}
+    </div>
+  );
+}
 
 /* ─── ChunkGrid ─────────────────────────────────────────────── */
 function ChunkGrid({ pct, color }) {
-  const done = Math.ceil((pct / 100) * 40);
+  const done = Math.ceil((Math.min(pct, 100) / 100) * 40);
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(10,1fr)', gap: 4, maxWidth: 280, margin: '0 auto 1rem' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(10,1fr)', gap: 4, maxWidth: 280, margin: '0 auto 0.9rem' }}>
       {Array.from({ length: 40 }).map((_, i) => (
         <div key={i} style={{
           aspectRatio: '1', borderRadius: 3,
           background: i < done ? color : 'rgba(255,255,255,0.05)',
-          boxShadow: i < done ? `0 0 4px ${color}` : 'none',
+          boxShadow:  i < done ? `0 0 4px ${color}` : 'none',
           transition: 'background 0.1s, box-shadow 0.1s',
         }} />
       ))}
@@ -57,413 +164,331 @@ function ChunkGrid({ pct, color }) {
 }
 
 /* ─── ProgressBlock ─────────────────────────────────────────── */
-function ProgressBlock({ pct, bytes, total, speed, elapsed, color, label }) {
+function ProgressBlock({ pct, bytes, total, speed, elapsed, color, label, encrypted }) {
   return (
     <div>
-      <p style={{ textAlign: 'center', fontWeight: 600, fontSize: '0.88rem', marginBottom: '0.8rem' }}>{label}</p>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'0.4rem', marginBottom:'0.7rem' }}>
+        <p style={{ fontWeight: 600, fontSize: '0.86rem', margin: 0 }}>{label}</p>
+        {encrypted && (
+          <span style={{ display:'flex', alignItems:'center', gap:3, fontSize:'0.63rem',
+            background:'var(--color-success-glow)', border:'1px solid var(--color-success)',
+            borderRadius:5, padding:'0.08rem 0.38rem', color:'var(--color-success)' }}>
+            <Lock size={8} /> AES-256
+          </span>
+        )}
+      </div>
       <ChunkGrid pct={pct} color={color} />
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', marginBottom: '0.35rem' }}>
-        <span style={{ color: 'var(--text-muted)' }}>{fmtBytes(bytes)} / {fmtBytes(total)}</span>
-        <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{Math.min(100, Math.round(pct))}%</span>
+      <div style={{ display:'flex', justifyContent:'space-between', fontSize:'0.77rem', marginBottom:'0.3rem' }}>
+        <span style={{ color:'var(--text-muted)' }}>{fmtBytes(bytes)} / {fmtBytes(total)}</span>
+        <span style={{ fontFamily:'var(--font-mono)', fontWeight:700 }}>{Math.min(100,Math.round(pct))}%</span>
       </div>
-      <div style={{ height: 5, background: 'rgba(255,255,255,0.05)', borderRadius: 100, overflow: 'hidden', marginBottom: '0.4rem' }}>
-        <div style={{ height: '100%', width: `${Math.min(100, pct)}%`, background: color, transition: 'width 0.15s linear' }} />
+      <div style={{ height:5, background:'rgba(255,255,255,0.05)', borderRadius:100, overflow:'hidden', marginBottom:'0.4rem' }}>
+        <div style={{ height:'100%', width:`${Math.min(100,pct)}%`, background:color, transition:'width 0.12s linear' }} />
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.73rem', color: 'var(--text-muted)' }}>
+      <div style={{ display:'flex', justifyContent:'space-between', fontSize:'0.72rem', color:'var(--text-muted)' }}>
         <span>⏱ {elapsed}s</span><span>⚡ {speed} MB/s</span>
       </div>
     </div>
   );
 }
 
-/* ─── SignalStatus badge ────────────────────────────────────── */
-function SignalStatus({ status }) {
-  const map = {
-    connecting: { color: 'var(--color-warning)', icon: <Activity size={11} />, text: 'Connecting to signal server…' },
-    connected: { color: 'var(--color-success)', icon: <Wifi size={11} />, text: 'Signal server connected' },
-    error: { color: 'var(--color-error)', icon: <WifiOff size={11} />, text: 'Signal server offline — start it first' },
-  };
-  const s = map[status] || map.connecting;
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.72rem', color: s.color, marginBottom: '1rem', background: `${s.color}15`, border: `1px solid ${s.color}40`, borderRadius: 7, padding: '0.35rem 0.7rem' }}>
-      {s.icon}<span>{s.text}</span>
-    </div>
-  );
-}
-
 /* ═══════════════════════════════════════════════════════════════
- *  useSignaling  —  manages the WebSocket + RTCPeerConnection
- *
- *  Returns an object with:
- *    sigStatus     'connecting' | 'connected' | 'error'
- *    myCode        generated peer code (registered on server)
- *    sendSignal    (msg) => void   — send any message via WS
- *    onSignal      ref to set a handler for incoming messages
+ *  SENDER PANEL
  * ══════════════════════════════════════════════════════════════ */
-function useSignaling() {
-  const [sigStatus, setSigStatus] = useState('connecting');
-  const [myCode] = useState(genCode);
-  const wsRef = useRef(null);
-  const handlerRef = useRef(null); // set by component to handle incoming msgs
+function SenderPanel({ addToast }) {
+  const [myCode]              = useState(genCode);
+  const { peerRef, status, errMsg } = usePeer(myCode);
 
-  const connect = useCallback(() => {
-    setSigStatus('connecting');
-    const url = getSignalURL();
-    const ws = new WebSocket(url);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: 'register', code: myCode }));
-    };
-
-    ws.onmessage = (e) => {
-      let msg;
-      try { msg = JSON.parse(e.data); } catch { return; }
-      if (msg.type === 'registered') { setSigStatus('connected'); return; }
-      if (handlerRef.current) handlerRef.current(msg);
-    };
-
-    ws.onclose = () => {
-      setSigStatus('error');
-      // Retry after 3s
-      setTimeout(connect, 3000);
-    };
-
-    ws.onerror = () => {
-      setSigStatus('error');
-      ws.close();
-    };
-  }, [myCode]); // eslint-disable-line
-
-  useEffect(() => {
-    connect();
-    return () => {
-      const ws = wsRef.current;
-      if (ws) { ws.onclose = null; ws.close(); }
-    };
-  }, []); // eslint-disable-line
-
-  const sendSignal = useCallback((msg) => {
-    const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(msg));
-    }
-  }, []);
-
-  return { sigStatus, myCode, sendSignal, onSignal: handlerRef };
-}
-
-/* ═══════════════════════════════════════════════════════════════
- *  SENDER COMPONENT
- * ══════════════════════════════════════════════════════════════ */
-function SenderPanel({ sigStatus, myCode, sendSignal, onSignal, addToast }) {
   const [targetCode, setTarget] = useState('');
-  const [phase, setPhase] = useState('idle'); // idle|requesting|connected|awaiting|sending|done
-  const [file, setFile] = useState(null);
-  const [pct, setPct] = useState(0);
-  const [speed, setSpeed] = useState('0.0');
-  const [elapsed, setElapsed] = useState('0.0');
-  const [txBytes, setTxBytes] = useState(0);
-  const [isDrag, setIsDrag] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [errMsg, setErrMsg] = useState('');
+  const [phase, setPhase]       = useState('idle');   // idle|connected|awaiting|encrypting|sending|done
+  const [file, setFile]         = useState(null);
+  const [pct, setPct]           = useState(0);
+  const [speed, setSpeed]       = useState('0.0');
+  const [elapsed, setElapsed]   = useState('0.0');
+  const [txBytes, setTxBytes]   = useState(0);
+  const [isDrag, setIsDrag]     = useState(false);
+  const [connErr, setConnErr]   = useState('');
 
-  const pcRef = useRef(null);
-  const dcRef = useRef(null);
-  const fileRef = useRef(null);
-  const targetRef = useRef('');
-  const t0Ref = useRef(null);
-  const inputRef = useRef(null);
+  const connRef    = useRef(null);
+  const fileRef    = useRef(null);
+  const targetRef  = useRef('');
+  const t0Ref      = useRef(null);
+  const lastRef    = useRef({ b: 0, t: Date.now() });
+  const inputRef   = useRef(null);
 
-  useEffect(() => { fileRef.current = file; }, [file]);
+  useEffect(() => { fileRef.current  = file;       }, [file]);
   useEffect(() => { targetRef.current = targetCode; }, [targetCode]);
 
-  /* Handle incoming signals addressed to us */
-  useEffect(() => {
-    onSignal.current = (msg) => {
-      if (msg.type === 'error') {
-        setErrMsg(msg.reason);
-        setPhase('idle');
-        addToast(msg.reason, 'error');
-        return;
-      }
-      if (msg.type === 'accept' && msg.from === targetRef.current) {
-        addToast('Receiver accepted! Establishing WebRTC…', 'success');
-        startWebRTC(msg.from);
-        return;
-      }
-      if (msg.type === 'reject' && msg.from === targetRef.current) {
-        cleanup();
-        setPhase('idle');
-        addToast('Receiver rejected the request.', 'info');
-        return;
-      }
-      if (msg.type === 'answer') {
-        pcRef.current?.setRemoteDescription(new RTCSessionDescription(msg.sdp));
-        return;
-      }
-      if (msg.type === 'ice') {
-        try { pcRef.current?.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch (_) { }
-        return;
-      }
-    };
-  }, []); // eslint-disable-line
-
-  const cleanup = () => {
-    dcRef.current?.close();
-    pcRef.current?.close();
-    dcRef.current = null;
-    pcRef.current = null;
-  };
-
-  /* Send the file request */
-  const sendRequest = () => {
-    if (!file || !targetCode.trim()) return;
-    setErrMsg('');
-    sendSignal({ type: 'request', to: targetCode.trim(), fileName: file.name, fileSize: file.size });
-    setPhase('awaiting');
-    addToast(`Request sent to ${targetCode.trim()} — waiting for accept…`, 'info');
-  };
-
-  /* Build RTCPeerConnection and start the offer/answer flow */
-  const startWebRTC = async (remoteCode) => {
-    cleanup();
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-    pcRef.current = pc;
-
-    /* Data channel for file */
-    const dc = pc.createDataChannel('file', { ordered: true });
-    dcRef.current = dc;
-
-    dc.onopen = () => {
-      setPhase('sending');
-      addToast('WebRTC data channel open — sending…', 'success');
-      sendFile(fileRef.current, dc);
-    };
-    dc.onerror = (e) => { addToast('DataChannel error: ' + e.message, 'error'); cleanup(); setPhase('idle'); };
-
-    /* ICE */
-    pc.onicecandidate = ({ candidate }) => {
-      if (candidate) sendSignal({ type: 'ice', to: remoteCode, candidate: candidate.toJSON() });
-    };
-    pc.oniceconnectionstatechange = () => {
-      if (pc.iceConnectionState === 'failed') {
-        addToast('WebRTC connection failed — check both devices are on the same network.', 'error');
-        cleanup(); setPhase('idle');
-      }
-    };
-
-    /* Create offer */
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    sendSignal({ type: 'offer', to: remoteCode, sdp: pc.localDescription });
-  };
-
-  /* Stream the file through the DataChannel */
-  const sendFile = async (f, dc) => {
-    const buffer = await f.arrayBuffer();
-    const total = buffer.byteLength;
-    let offset = 0;
-    t0Ref.current = Date.now();
-    let lastBytes = 0, lastTime = Date.now();
-
-    /* Send metadata first */
-    dc.send(JSON.stringify({ type: 'meta', name: f.name, size: f.size, mime: f.type || 'application/octet-stream' }));
-
-    const sendChunk = () => {
-      /* Throttle: wait if buffer is filling up */
-      if (dc.bufferedAmount > 5 * CHUNK_SIZE) {
-        setTimeout(sendChunk, 50);
-        return;
-      }
-
-      const slice = buffer.slice(offset, offset + CHUNK_SIZE);
-      dc.send(slice);
-      offset += slice.byteLength;
-
-      const pct = (offset / total) * 100;
-      const now = Date.now();
-      const dt = (now - lastTime) / 1000;
-      const spd = dt > 0.2 ? (((offset - lastBytes) / dt) / 1024 / 1024).toFixed(1) : speed;
-      if (dt > 0.2) { lastBytes = offset; lastTime = now; }
-      const el = ((now - t0Ref.current) / 1000).toFixed(1);
-
-      setPct(pct);
-      setSpeed(spd);
-      setElapsed(el);
-      setTxBytes(offset);
-
-      if (offset < total) {
-        setTimeout(sendChunk, 0);
-      } else {
-        /* Send end signal */
-        dc.send(JSON.stringify({ type: 'done' }));
-        setTimeout(() => {
-          setPhase('done');
-          addToast(`✓ "${f.name}" sent via WebRTC!`, 'success');
-        }, 300);
-      }
-    };
-
-    sendChunk();
-  };
-
+  /* Open connection to receiver */
   const connect = (e) => {
     e.preventDefault();
-    if (!targetCode.trim()) return;
-    setErrMsg('');
-    setPhase('connected');
-    addToast('Ready to send. Pick a file.', 'success');
+    const tc = targetCode.trim().toUpperCase();
+    if (!tc || status !== 'connected') return;
+    setConnErr('');
+
+    const conn = peerRef.current.connect(tc, {
+      reliable: true,
+      serialization: 'binary',
+    });
+    connRef.current = conn;
+
+    conn.on('open', () => {
+      setPhase('connected');
+      addToast('Connected! Pick a file to send.', 'success');
+    });
+
+    conn.on('data', (raw) => {
+      if (typeof raw !== 'string') return;
+      const msg = JSON.parse(raw);
+      if (msg.type === 'accept') {
+        addToast('Receiver accepted! Encrypting…', 'success');
+        runSend(fileRef.current, conn);
+      }
+      if (msg.type === 'reject') {
+        setPhase('connected');
+        addToast('Receiver rejected the transfer.', 'info');
+      }
+    });
+
+    conn.on('error', (err) => {
+      setConnErr(err.message || 'Connection failed');
+      setPhase('idle');
+      addToast('Connection error: ' + err.message, 'error');
+    });
+
+    conn.on('close', () => {
+      if (phase !== 'done') {
+        setPhase('idle');
+        addToast('Connection closed.', 'info');
+      }
+    });
+  };
+
+  /* Send the transfer request */
+  const sendRequest = () => {
+    const f = fileRef.current;
+    if (!f || !connRef.current) return;
+    connRef.current.send(JSON.stringify({
+      type: 'request', fileName: f.name, fileSize: f.size,
+    }));
+    setPhase('awaiting');
+    addToast('Request sent — waiting for receiver…', 'info');
+  };
+
+  /* Encrypt then stream */
+  const runSend = async (f, conn) => {
+    setPhase('encrypting');
+    try {
+      const raw   = await f.arrayBuffer();
+      const { enc, keyB64, ivB64 } = await encryptFile(raw);
+
+      /* Send key + metadata first (protected by WebRTC DTLS) */
+      conn.send(JSON.stringify({
+        type: 'key', keyB64, ivB64,
+        meta: { name: f.name, size: enc.byteLength, origSize: f.size, mime: f.type || 'application/octet-stream' },
+      }));
+
+      setPhase('sending');
+      t0Ref.current = Date.now();
+      lastRef.current = { b: 0, t: Date.now() };
+      const total  = enc.byteLength;
+      let   offset = 0;
+
+      const tick = () => {
+        if (conn.dataChannel && conn.dataChannel.bufferedAmount > 8 * CHUNK_SIZE) {
+          setTimeout(tick, 30); return;
+        }
+        const slice = enc.slice(offset, offset + CHUNK_SIZE);
+        conn.send(slice);
+        offset += slice.byteLength;
+
+        const p   = (offset / total) * 100;
+        const now = Date.now();
+        const dt  = (now - lastRef.current.t) / 1000;
+        let   spd = speed;
+        if (dt > 0.15) {
+          spd = (((offset - lastRef.current.b) / dt) / 1048576).toFixed(1);
+          lastRef.current = { b: offset, t: now };
+        }
+        const el = ((now - t0Ref.current) / 1000).toFixed(1);
+        setPct(p); setSpeed(spd); setElapsed(el); setTxBytes(offset);
+
+        if (offset < total) {
+          setTimeout(tick, 0);
+        } else {
+          conn.send(JSON.stringify({ type: 'done' }));
+          setTimeout(() => {
+            setPhase('done');
+            addToast(`✓ "${f.name}" sent — encrypted with AES-256-GCM!`, 'success');
+          }, 300);
+        }
+      };
+      tick();
+    } catch (err) {
+      setPhase('connected');
+      addToast('Encryption error: ' + err.message, 'error');
+    }
   };
 
   const disconnect = () => {
-    cleanup();
-    setPhase('idle');
-    setFile(null);
-    setTarget('');
+    connRef.current?.close();
+    connRef.current = null;
+    setPhase('idle'); setFile(null); setTarget('');
     setPct(0); setTxBytes(0); setElapsed('0.0');
-    addToast('Disconnected.', 'info');
   };
 
-  /* drag */
   const onDrag = (e) => { e.preventDefault(); setIsDrag(e.type !== 'dragleave' && e.type !== 'drop'); };
   const onDrop = (e) => { e.preventDefault(); setIsDrag(false); pick(e.dataTransfer?.files?.[0]); };
   const onFile = (e) => { pick(e.target.files?.[0]); e.target.value = ''; };
-  const pick = (f) => { if (f) { setFile(f); setPct(0); setTxBytes(0); setElapsed('0.0'); } };
-
-  const copyCode = () => {
-    navigator.clipboard.writeText(myCode).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
-    addToast('Sender code copied!', 'success');
-  };
+  const pick   = (f) => { if (f) { setFile(f); setPct(0); setTxBytes(0); setElapsed('0.0'); } };
 
   /* ── render ── */
   return (
     <div style={{ flex: 1, minWidth: 0 }}>
       {/* header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', marginBottom: '0.9rem', paddingBottom: '0.65rem', borderBottom: '1px solid var(--border-dim)' }}>
-        <div style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(56,189,248,0.15)', border: '1px solid rgba(56,189,248,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <ArrowRight size={14} color="var(--cyan-primary)" />
+      <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.8rem', paddingBottom:'0.6rem', borderBottom:'1px solid var(--border-dim)' }}>
+        <div style={{ width:27, height:27, borderRadius:7, background:'rgba(56,189,248,0.15)', border:'1px solid rgba(56,189,248,0.3)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+          <ArrowRight size={13} color="var(--cyan-primary)" />
         </div>
-        <div><div style={{ fontWeight: 700, fontSize: '0.9rem' }}>Sender</div><div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Initiates transfer</div></div>
+        <div>
+          <div style={{ fontWeight:700, fontSize:'0.88rem' }}>Sender</div>
+          <div style={{ fontSize:'0.68rem', color:'var(--text-muted)' }}>Encrypts &amp; sends files</div>
+        </div>
       </div>
 
-      <SignalStatus status={sigStatus} />
+      <StatusBadge status={status} errMsg={errMsg} />
 
-      {errMsg && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'var(--color-error-glow)', border: '1px solid var(--color-error)', borderRadius: 8, padding: '0.5rem 0.8rem', marginBottom: '0.9rem', fontSize: '0.8rem', color: 'var(--color-error)' }}>
-          <AlertCircle size={13} />{errMsg}
+      <CodeBox
+        code={myCode}
+        label="Your Sender Code"
+        color="var(--cyan-primary)"
+        hint="Share this if others want to send you files"
+      />
+
+      {connErr && (
+        <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', background:'var(--color-error-glow)', border:'1px solid var(--color-error)', borderRadius:7, padding:'0.4rem 0.7rem', marginBottom:'0.8rem', fontSize:'0.77rem', color:'var(--color-error)' }}>
+          <AlertCircle size={12} />{connErr}
         </div>
       )}
 
-      {/* my code */}
-      <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-dim)', borderRadius: 9, padding: '0.65rem 0.85rem', marginBottom: '0.9rem' }}>
-        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Your Sender Code</div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 5 }}>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'var(--cyan-primary)', wordBreak: 'break-all' }}>{myCode}</span>
-          <button onClick={copyCode} title="Copy" style={{ background: 'none', border: 'none', cursor: 'pointer', color: copied ? 'var(--color-success)' : 'var(--text-muted)', flexShrink: 0 }}><Copy size={12} /></button>
-        </div>
-      </div>
-
-      {/* ── IDLE ── */}
+      {/* IDLE */}
       {phase === 'idle' && (
         <form onSubmit={connect}>
-          <div className="form-group" style={{ marginBottom: '0.85rem' }}>
-            <label className="form-label" htmlFor="sender-target" style={{ fontSize: '0.78rem', marginBottom: '0.3rem' }}>
+          <div className="form-group" style={{ marginBottom:'0.8rem' }}>
+            <label className="form-label" htmlFor="s-target" style={{ fontSize:'0.78rem', marginBottom:'0.3rem' }}>
               Receiver's Code
             </label>
-            <input id="sender-target" className="form-input" type="text"
-              placeholder="CRYPTO-P2P-XXXX"
-              value={targetCode} onChange={e => setTarget(e.target.value)}
-              autoComplete="off" spellCheck={false} style={{ fontSize: '0.88rem' }}
-              disabled={sigStatus !== 'connected'}
+            <input id="s-target" className="form-input" type="text"
+              placeholder="CT-XXXXX"
+              value={targetCode} onChange={e => setTarget(e.target.value.toUpperCase())}
+              autoComplete="off" spellCheck={false}
+              style={{ fontSize:'0.9rem', fontFamily:'var(--font-mono)', letterSpacing:'0.05em' }}
+              disabled={status !== 'connected'}
             />
           </div>
           <button className="btn btn-primary" type="submit"
-            disabled={!targetCode.trim() || sigStatus !== 'connected'}
-            style={{ justifyContent: 'center' }}>
-            <Share2 size={14} /> Connect to Receiver
+            disabled={!targetCode.trim() || status !== 'connected'}
+            style={{ justifyContent:'center' }}>
+            <Share2 size={14} /> Connect
           </button>
         </form>
       )}
 
-      {/* ── CONNECTED: pick file ── */}
+      {/* CONNECTED: file picker */}
       {phase === 'connected' && (
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.85rem' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:'0.35rem', marginBottom:'0.75rem' }}>
             <Radio size={11} color="var(--color-success)" className="inner-icon" />
-            <span style={{ fontSize: '0.76rem', color: 'var(--color-success)' }}>
-              Ready → <strong style={{ fontFamily: 'var(--font-mono)' }}>{targetCode}</strong>
+            <span style={{ fontSize:'0.75rem', color:'var(--color-success)' }}>
+              Connected → <strong style={{ fontFamily:'var(--font-mono)' }}>{targetCode}</strong>
             </span>
           </div>
 
           {!file ? (
-            <div
-              className={`dropzone ${isDrag ? 'active' : ''}`}
+            <div className={`dropzone ${isDrag ? 'active' : ''}`}
               onDragEnter={onDrag} onDragLeave={onDrag} onDragOver={onDrag} onDrop={onDrop}
               onClick={() => inputRef.current?.click()}
-              style={{ padding: '1.4rem 1rem', cursor: 'pointer', marginBottom: '0.8rem' }}
-            >
-              <input ref={inputRef} type="file" style={{ display: 'none' }} onChange={onFile} />
-              <div className="dropzone-icon-container" style={{ width: '2.4rem', height: '2.4rem' }}><Upload size={15} /></div>
-              <div className="dropzone-text"><span className="dropzone-title" style={{ fontSize: '0.84rem' }}>Drop or click to choose file</span></div>
+              style={{ padding:'1.3rem 1rem', cursor:'pointer', marginBottom:'0.7rem' }}>
+              <input ref={inputRef} type="file" style={{ display:'none' }} onChange={onFile} />
+              <div className="dropzone-icon-container" style={{ width:'2.2rem', height:'2.2rem' }}><Upload size={14} /></div>
+              <div className="dropzone-text">
+                <span className="dropzone-title" style={{ fontSize:'0.82rem' }}>Drop or click to pick file</span>
+                <span className="dropzone-desc" style={{ fontSize:'0.71rem' }}>Will be AES-256-GCM encrypted</span>
+              </div>
             </div>
           ) : (
             <div>
-              <div className="selected-file-card" style={{ marginBottom: '0.8rem' }}>
+              <div className="selected-file-card" style={{ marginBottom:'0.7rem' }}>
                 <div className="file-info-layout">
-                  <div className="file-icon"><File size={20} /></div>
+                  <div className="file-icon"><File size={19} /></div>
                   <div className="file-meta">
-                    <span className="file-name" style={{ maxWidth: 140, fontSize: '0.82rem' }}>{file.name}</span>
+                    <span className="file-name" style={{ maxWidth:130, fontSize:'0.81rem' }}>{file.name}</span>
                     <span className="file-size">{fmtBytes(file.size)}</span>
                   </div>
                 </div>
-                <button className="remove-file-btn" onClick={() => setFile(null)}><X size={14} /></button>
+                <button className="remove-file-btn" onClick={() => setFile(null)}><X size={13} /></button>
               </div>
-              <button className="btn btn-primary" onClick={sendRequest} style={{ justifyContent: 'center' }}>
-                <Zap size={14} /> Send to Receiver
+              <div style={{ display:'flex', alignItems:'center', gap:'0.35rem', fontSize:'0.7rem', color:'var(--color-success)', background:'var(--color-success-glow)', borderRadius:7, padding:'0.25rem 0.6rem', marginBottom:'0.7rem' }}>
+                <Lock size={10} /> AES-256-GCM encryption applied before transfer
+              </div>
+              <button className="btn btn-primary" onClick={sendRequest} style={{ justifyContent:'center' }}>
+                <Zap size={14} /> Encrypt &amp; Send
               </button>
             </div>
           )}
-          <button className="btn btn-secondary" onClick={disconnect} style={{ marginTop: '0.7rem', justifyContent: 'center', opacity: 0.6, fontSize: '0.82rem' }}>
-            Cancel
+
+          <button className="btn btn-secondary" onClick={disconnect}
+            style={{ marginTop:'0.6rem', justifyContent:'center', opacity:0.6, fontSize:'0.8rem' }}>
+            Disconnect
           </button>
         </div>
       )}
 
-      {/* ── AWAITING ACCEPT ── */}
+      {/* AWAITING */}
       {phase === 'awaiting' && (
-        <div style={{ textAlign: 'center', padding: '1.5rem 0' }}>
-          <div className="processing-animation" style={{ margin: '0 auto 0.65rem', width: 50, height: 50 }}>
-            <div className="glow-ring" /><Activity size={18} className="inner-icon" />
+        <div style={{ textAlign:'center', padding:'1.4rem 0' }}>
+          <div className="processing-animation" style={{ margin:'0 auto 0.6rem', width:48, height:48 }}>
+            <div className="glow-ring" /><Activity size={16} className="inner-icon" />
           </div>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>Waiting for receiver to accept…</p>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.3rem' }}>"{file?.name}"</p>
-          <button className="btn btn-secondary" onClick={disconnect} style={{ marginTop: '0.9rem', fontSize: '0.8rem', justifyContent: 'center', opacity: 0.65 }}>Cancel</button>
+          <p style={{ color:'var(--text-secondary)', fontSize:'0.81rem' }}>Waiting for receiver to accept…</p>
+          <p style={{ color:'var(--text-muted)', fontSize:'0.72rem', marginTop:'0.25rem' }}>"{file?.name}"</p>
+          <button className="btn btn-secondary" onClick={disconnect} style={{ marginTop:'0.85rem', fontSize:'0.78rem', justifyContent:'center', opacity:0.6 }}>Cancel</button>
         </div>
       )}
 
-      {/* ── SENDING ── */}
+      {/* ENCRYPTING */}
+      {phase === 'encrypting' && (
+        <div style={{ textAlign:'center', padding:'1.4rem 0' }}>
+          <div className="processing-animation" style={{ margin:'0 auto 0.6rem', width:48, height:48 }}>
+            <div className="glow-ring" style={{ borderColor:'var(--color-success)' }} />
+            <Lock size={16} className="inner-icon" style={{ color:'var(--color-success)' }} />
+          </div>
+          <p style={{ color:'var(--text-secondary)', fontSize:'0.81rem' }}>Encrypting with AES-256-GCM…</p>
+        </div>
+      )}
+
+      {/* SENDING */}
       {phase === 'sending' && (
         <ProgressBlock pct={pct} bytes={txBytes} total={file?.size}
           speed={speed} elapsed={elapsed}
-          color="var(--cyan-primary)" label="Sending via WebRTC DataChannel" />
+          color="var(--cyan-primary)" label="Sending Encrypted File" encrypted />
       )}
 
-      {/* ── DONE ── */}
+      {/* DONE */}
       {phase === 'done' && (
-        <div style={{ textAlign: 'center', padding: '0.4rem 0' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', color: 'var(--color-success)', marginBottom: '0.45rem' }}>
-            <CheckCircle2 size={18} /><strong>Sent!</strong>
+        <div style={{ textAlign:'center', padding:'0.4rem 0' }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'0.4rem', color:'var(--color-success)', marginBottom:'0.4rem' }}>
+            <CheckCircle2 size={17} /><strong>Sent &amp; Encrypted!</strong>
           </div>
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.9rem' }}>
+          <p style={{ fontSize:'0.79rem', color:'var(--text-secondary)', marginBottom:'0.85rem' }}>
             {file?.name} · {fmtBytes(file?.size)} · {elapsed}s
           </p>
-          <div style={{ display: 'flex', gap: '0.55rem', justifyContent: 'center', flexWrap: 'wrap' }}>
-            <button className="btn btn-primary" style={{ fontSize: '0.82rem', justifyContent: 'center' }}
-              onClick={() => { cleanup(); setPhase('connected'); setFile(null); setPct(0); setTxBytes(0); setElapsed('0.0'); }}>
+          <div style={{ display:'flex', gap:'0.5rem', justifyContent:'center', flexWrap:'wrap' }}>
+            <button className="btn btn-primary" style={{ fontSize:'0.8rem', justifyContent:'center' }}
+              onClick={() => { setPhase('connected'); setFile(null); setPct(0); setTxBytes(0); setElapsed('0.0'); }}>
               Send Another
             </button>
-            <button className="btn btn-secondary" style={{ fontSize: '0.82rem', justifyContent: 'center' }} onClick={disconnect}>
+            <button className="btn btn-secondary" style={{ fontSize:'0.8rem', justifyContent:'center' }} onClick={disconnect}>
               Disconnect
             </button>
           </div>
@@ -474,277 +499,261 @@ function SenderPanel({ sigStatus, myCode, sendSignal, onSignal, addToast }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
- *  RECEIVER COMPONENT
+ *  RECEIVER PANEL
  * ══════════════════════════════════════════════════════════════ */
-function ReceiverPanel({ sigStatus, myCode, sendSignal, onSignal, addToast }) {
-  const [phase, setPhase] = useState('waiting');
-  const [incoming, setIncoming] = useState(null);
+function ReceiverPanel({ addToast }) {
+  const [myCode]              = useState(genCode);
+  const { peerRef, status, errMsg } = usePeer(myCode);
+
+  const [phase, setPhase]       = useState('waiting');
+  const [incoming, setIncoming] = useState(null);     // { name, size }
   const [senderCode, setSender] = useState('');
-  const [pct, setPct] = useState(0);
-  const [speed, setSpeed] = useState('0.0');
-  const [elapsed, setElapsed] = useState('0.0');
-  const [rxBytes, setRxBytes] = useState(0);
-  const [copied, setCopied] = useState(false);
-  const [savedBlob, setSavedBlob] = useState(null);
+  const [pct, setPct]           = useState(0);
+  const [speed, setSpeed]       = useState('0.0');
+  const [elapsed, setElapsed]   = useState('0.0');
+  const [rxBytes, setRxBytes]   = useState(0);
+  const [savedBlob, setSaved]   = useState(null);
+  const [decrypting, setDec]    = useState(false);
 
-  const pcRef = useRef(null);
+  const connRef   = useRef(null);
   const chunksRef = useRef([]);
-  const metaRef = useRef(null);
-  const senderRef = useRef('');
-  const t0Ref = useRef(null);
-  const lastRef = useRef({ bytes: 0, time: Date.now() });
+  const metaRef   = useRef(null);
+  const keyRef    = useRef(null);
+  const t0Ref     = useRef(null);
+  const lastRef   = useRef({ b: 0, t: Date.now() });
+  const phaseRef  = useRef('waiting');
 
-  useEffect(() => { senderRef.current = senderCode; }, [senderCode]);
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
 
-  /* Handle incoming signals */
+  /* Listen for incoming connections */
   useEffect(() => {
-    onSignal.current = (msg) => {
-      /* Incoming file request */
-      if (msg.type === 'request') {
-        if (phase === 'receiving') return; // already busy
-        setIncoming({ name: msg.fileName, size: msg.fileSize });
-        setSender(msg.from);
-        setPhase('incoming');
-        addToast(`📡 "${msg.fileName}" from ${msg.from}`, 'info');
-        return;
-      }
-      /* WebRTC offer — complete the handshake */
-      if (msg.type === 'offer') {
-        acceptWebRTC(msg.from, msg.sdp);
-        return;
-      }
-      /* ICE candidates from sender */
-      if (msg.type === 'ice') {
-        try { pcRef.current?.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch (_) { }
-        return;
-      }
-    };
-  }, [phase]); // eslint-disable-line
+    const peer = peerRef.current;
+    if (!peer || status !== 'connected') return;
 
-  const cleanup = () => {
-    pcRef.current?.close();
-    pcRef.current = null;
-    chunksRef.current = [];
-    metaRef.current = null;
-  };
+    const onConn = (conn) => {
+      conn.on('data', (raw) => {
+        if (typeof raw === 'string') {
+          const msg = JSON.parse(raw);
 
-  /* User clicked Accept */
-  const accept = () => {
-    setPhase('accepting');
-    sendSignal({ type: 'accept', to: senderRef.current });
-    addToast('Accepted — waiting for WebRTC connection…', 'info');
-  };
+          if (msg.type === 'request') {
+            if (phaseRef.current === 'receiving') return;
+            connRef.current = conn;
+            setIncoming({ name: msg.fileName, size: msg.fileSize });
+            setSender(conn.peer);
+            setPhase('incoming');
+            chunksRef.current = [];
+            metaRef.current   = null;
+            keyRef.current    = null;
+            addToast(`📡 "${msg.fileName}" from ${conn.peer}`, 'info');
+          }
 
-  /* Complete WebRTC handshake after receiving offer */
-  const acceptWebRTC = async (fromCode, sdp) => {
-    cleanup();
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-    pcRef.current = pc;
-
-    pc.onicecandidate = ({ candidate }) => {
-      if (candidate) sendSignal({ type: 'ice', to: fromCode, candidate: candidate.toJSON() });
-    };
-
-    pc.ondatachannel = ({ channel }) => {
-      addToast('WebRTC channel open — receiving…', 'success');
-      t0Ref.current = Date.now();
-      lastRef.current = { bytes: 0, time: Date.now() };
-      setPhase('receiving');
-
-      channel.onmessage = ({ data }) => {
-        /* Text frame = metadata or done signal */
-        if (typeof data === 'string') {
-          const obj = JSON.parse(data);
-          if (obj.type === 'meta') {
-            metaRef.current = obj;
+          if (msg.type === 'key') {
+            keyRef.current  = { keyB64: msg.keyB64, ivB64: msg.ivB64 };
+            metaRef.current = msg.meta;
             chunksRef.current = [];
           }
-          if (obj.type === 'done') {
+
+          if (msg.type === 'done') {
             finalize();
           }
-          return;
+        } else {
+          /* Binary chunk */
+          chunksRef.current.push(raw);
+          const received = chunksRef.current.reduce((a, c) => a + c.byteLength, 0);
+          const total    = metaRef.current?.size ?? 0;
+          const p        = total ? (received / total) * 100 : 0;
+          const now      = Date.now();
+          const dt       = (now - lastRef.current.t) / 1000;
+          let   spd      = '0.0';
+          if (dt > 0.15) {
+            spd = (((received - lastRef.current.b) / dt) / 1048576).toFixed(1);
+            lastRef.current = { b: received, t: now };
+          }
+          const el = ((now - t0Ref.current) / 1000).toFixed(1);
+          setPct(p); setSpeed(spd); setElapsed(el); setRxBytes(received);
         }
-        /* Binary frame = file chunk */
-        chunksRef.current.push(data);
-        const received = chunksRef.current.reduce((a, c) => a + c.byteLength, 0);
-        const total = metaRef.current?.size ?? 0;
-        const p = total ? (received / total) * 100 : 0;
-        const now = Date.now();
-        const dt = (now - lastRef.current.time) / 1000;
-        let spd = speed;
-        if (dt > 0.2) {
-          spd = (((received - lastRef.current.bytes) / dt) / 1024 / 1024).toFixed(1);
-          lastRef.current = { bytes: received, time: now };
+      });
+
+      conn.on('close', () => {
+        if (phaseRef.current !== 'done') {
+          setPhase('waiting');
+          addToast('Sender disconnected.', 'info');
         }
-        const el = ((now - t0Ref.current) / 1000).toFixed(1);
-        setPct(p);
-        setSpeed(spd);
-        setElapsed(el);
-        setRxBytes(received);
-      };
+      });
     };
 
-    await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-    sendSignal({ type: 'answer', to: fromCode, sdp: pc.localDescription });
+    peer.on('connection', onConn);
+    return () => peer.off('connection', onConn);
+  }, [status]); // eslint-disable-line
+
+  const accept = () => {
+    connRef.current?.send(JSON.stringify({ type: 'accept' }));
+    setPhase('receiving');
+    t0Ref.current = Date.now();
+    lastRef.current = { b: 0, t: Date.now() };
+    addToast('Accepted — receiving…', 'info');
   };
 
-  const finalize = () => {
-    const meta = metaRef.current;
-    const blob = new Blob(chunksRef.current, { type: meta?.mime || 'application/octet-stream' });
-    setSavedBlob({ blob, name: meta?.name || 'received-file' });
-    setPhase('done');
-    setPct(100);
-    setRxBytes(meta?.size ?? 0);
-    addToast(`✓ "${meta?.name}" received!`, 'success');
-    cleanup();
+  const reject = () => {
+    connRef.current?.send(JSON.stringify({ type: 'reject' }));
+    connRef.current?.close();
+    connRef.current = null;
+    setIncoming(null); setSender(''); setPhase('waiting');
+    addToast('Rejected.', 'info');
+  };
+
+  const finalize = async () => {
+    setDec(true);
+    try {
+      const encBuf    = await new Blob(chunksRef.current).arrayBuffer();
+      const { keyB64, ivB64 } = keyRef.current;
+      const decBuf    = await decryptFile(encBuf, keyB64, ivB64);
+      const meta      = metaRef.current;
+      const blob      = new Blob([decBuf], { type: meta?.mime || 'application/octet-stream' });
+      setSaved({ blob, name: meta?.name || 'received-file' });
+      setPhase('done'); setPct(100);
+      setRxBytes(meta?.origSize ?? encBuf.byteLength);
+      addToast(`✓ "${meta?.name}" decrypted & ready!`, 'success');
+    } catch (err) {
+      addToast('Decryption failed: ' + err.message, 'error');
+      setPhase('waiting');
+    } finally {
+      setDec(false);
+      chunksRef.current = [];
+    }
   };
 
   const saveFile = () => {
     if (!savedBlob) return;
     const url = URL.createObjectURL(savedBlob.blob);
-    const a = document.createElement('a');
+    const a   = document.createElement('a');
     a.href = url; a.download = savedBlob.name;
     document.body.appendChild(a); a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    document.body.removeChild(a); URL.revokeObjectURL(url);
     addToast(`"${savedBlob.name}" saved!`, 'success');
   };
 
-  const reject = () => {
-    sendSignal({ type: 'reject', to: senderRef.current });
-    setIncoming(null); setSender(''); setPhase('waiting');
-    addToast('Rejected.', 'info');
-  };
-
   const reset = () => {
-    cleanup();
+    connRef.current?.close(); connRef.current = null;
     setPhase('waiting'); setIncoming(null); setSender('');
-    setPct(0); setRxBytes(0); setElapsed('0.0'); setSavedBlob(null);
-  };
-
-  const copyCode = () => {
-    navigator.clipboard.writeText(myCode).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2500); });
-    addToast('Receiver code copied!', 'success');
+    setPct(0); setRxBytes(0); setElapsed('0.0'); setSaved(null);
+    chunksRef.current = []; metaRef.current = null; keyRef.current = null;
   };
 
   /* ── render ── */
   return (
     <div style={{ flex: 1, minWidth: 0 }}>
       {/* header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', marginBottom: '0.9rem', paddingBottom: '0.65rem', borderBottom: '1px solid var(--border-dim)' }}>
-        <div style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <ArrowLeft size={14} color="var(--purple-primary)" />
+      <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.8rem', paddingBottom:'0.6rem', borderBottom:'1px solid var(--border-dim)' }}>
+        <div style={{ width:27, height:27, borderRadius:7, background:'rgba(167,139,250,0.15)', border:'1px solid rgba(167,139,250,0.3)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+          <ArrowLeft size={13} color="var(--purple-primary)" />
         </div>
-        <div><div style={{ fontWeight: 700, fontSize: '0.9rem' }}>Receiver</div><div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Accepts incoming files</div></div>
+        <div>
+          <div style={{ fontWeight:700, fontSize:'0.88rem' }}>Receiver</div>
+          <div style={{ fontSize:'0.68rem', color:'var(--text-muted)' }}>Decrypts &amp; saves files</div>
+        </div>
         {phase === 'incoming' && (
-          <div style={{ marginLeft: 'auto', width: 9, height: 9, borderRadius: '50%', background: 'var(--color-warning)', boxShadow: '0 0 8px var(--color-warning)', animation: 'pulse 1s ease-in-out infinite' }} />
+          <div style={{ marginLeft:'auto', width:8, height:8, borderRadius:'50%', background:'var(--color-warning)', boxShadow:'0 0 8px var(--color-warning)', animation:'pulse 1s ease-in-out infinite' }} />
         )}
       </div>
 
-      <SignalStatus status={sigStatus} />
+      <StatusBadge status={status} errMsg={errMsg} />
 
-      {/* receiver code */}
-      <div style={{ background: 'rgba(167,139,250,0.06)', border: '1px solid rgba(167,139,250,0.25)', borderRadius: 9, padding: '0.65rem 0.85rem', marginBottom: '0.9rem' }}>
-        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-          Your Receiver Code <span style={{ color: 'var(--purple-primary)', fontWeight: 600 }}>← share this with the sender</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', color: 'var(--purple-primary)', wordBreak: 'break-all' }}>{myCode}</span>
-          <button onClick={copyCode}
-            style={{ background: copied ? 'var(--color-success-glow)' : 'rgba(167,139,250,0.15)', border: `1px solid ${copied ? 'var(--color-success)' : 'rgba(167,139,250,0.35)'}`, borderRadius: 7, cursor: 'pointer', color: copied ? 'var(--color-success)' : 'var(--purple-primary)', padding: '0.22rem 0.6rem', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: 3, transition: 'all 0.2s', flexShrink: 0, whiteSpace: 'nowrap' }}>
-            <Copy size={11} />{copied ? '✓ Copied!' : 'Copy Code'}
-          </button>
-        </div>
-      </div>
+      <CodeBox
+        code={myCode}
+        label="Your Receiver Code — share this with the Sender"
+        color="var(--purple-primary)"
+        hint="Anyone with this code can send you a file"
+      />
 
-      {/* ── WAITING ── */}
+      {/* WAITING */}
       {phase === 'waiting' && (
-        <div style={{ textAlign: 'center', padding: '1.6rem 1rem', border: '1px dashed rgba(167,139,250,0.2)', borderRadius: 11, background: 'rgba(167,139,250,0.03)' }}>
-          <div className="processing-animation" style={{ margin: '0 auto 0.65rem', width: 50, height: 50 }}>
-            <div className="glow-ring" style={{ borderColor: 'var(--purple-primary)', boxShadow: '0 0 14px var(--purple-glow)' }} />
-            <ArrowDown size={16} className="inner-icon" style={{ color: 'var(--purple-primary)' }} />
+        <div style={{ textAlign:'center', padding:'1.5rem 1rem', border:'1px dashed rgba(167,139,250,0.22)', borderRadius:11, background:'rgba(167,139,250,0.03)' }}>
+          <div className="processing-animation" style={{ margin:'0 auto 0.6rem', width:48, height:48 }}>
+            <div className="glow-ring" style={{ borderColor:'var(--purple-primary)', boxShadow:'0 0 14px var(--purple-glow)' }} />
+            <ArrowDown size={15} className="inner-icon" style={{ color:'var(--purple-primary)' }} />
           </div>
-          <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.55 }}>
-            Listening for incoming transfers…<br />
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              Share your code with the sender — works across devices!
-            </span>
+          <p style={{ fontSize:'0.8rem', color:'var(--text-secondary)', lineHeight:1.55 }}>
+            Listening for incoming files…<br />
+            <span style={{ fontSize:'0.71rem', color:'var(--text-muted)' }}>Works across any device worldwide</span>
           </p>
         </div>
       )}
 
-      {/* ── INCOMING ── */}
-      {(phase === 'incoming' || phase === 'accepting') && (
-        <div style={{ animation: 'fadeIn 0.2s' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', background: 'hsla(37,90%,51%,0.1)', border: '1px solid var(--color-warning)', borderRadius: 9, padding: '0.55rem 0.8rem', marginBottom: '0.85rem' }}>
-            <Bell size={13} color="var(--color-warning)" />
-            <span style={{ fontSize: '0.8rem', color: 'var(--color-warning)', fontWeight: 600 }}>Incoming Transfer Request</span>
+      {/* INCOMING */}
+      {(phase === 'incoming') && (
+        <div style={{ animation:'fadeIn 0.2s' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', background:'hsla(37,90%,51%,0.1)', border:'1px solid var(--color-warning)', borderRadius:8, padding:'0.45rem 0.75rem', marginBottom:'0.75rem' }}>
+            <Bell size={12} color="var(--color-warning)" />
+            <span style={{ fontSize:'0.77rem', color:'var(--color-warning)', fontWeight:600 }}>Incoming Transfer</span>
           </div>
-          <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-dim)', borderRadius: 9, padding: '0.8rem', marginBottom: '0.85rem' }}>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>From</div>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', color: 'var(--purple-primary)', fontWeight: 700, marginBottom: '0.65rem' }}>{senderCode}</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', background: 'rgba(56,189,248,0.05)', borderRadius: 7, padding: '0.6rem 0.8rem' }}>
-              <File size={18} color="var(--cyan-primary)" style={{ flexShrink: 0 }} />
+          <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid var(--border-dim)', borderRadius:9, padding:'0.75rem', marginBottom:'0.75rem' }}>
+            <div style={{ fontSize:'0.68rem', color:'var(--text-muted)', marginBottom:'0.2rem' }}>From</div>
+            <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.82rem', color:'var(--purple-primary)', fontWeight:700, marginBottom:'0.6rem' }}>{senderCode}</div>
+            <div style={{ display:'flex', alignItems:'center', gap:'0.55rem', background:'rgba(56,189,248,0.05)', borderRadius:7, padding:'0.5rem 0.75rem' }}>
+              <File size={16} color="var(--cyan-primary)" style={{ flexShrink:0 }} />
               <div>
-                <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{incoming?.name}</div>
-                <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)' }}>{fmtBytes(incoming?.size)}</div>
+                <div style={{ fontWeight:600, fontSize:'0.83rem' }}>{incoming?.name}</div>
+                <div style={{ fontSize:'0.71rem', color:'var(--text-muted)' }}>{fmtBytes(incoming?.size)}</div>
               </div>
+            </div>
+            <div style={{ display:'flex', alignItems:'center', gap:'0.3rem', fontSize:'0.68rem', color:'var(--color-success)', marginTop:'0.5rem' }}>
+              <Lock size={9} /> File is AES-256-GCM encrypted — decrypted after receive
             </div>
           </div>
-          {phase === 'incoming' && (
-            <div style={{ display: 'flex', gap: '0.6rem' }}>
-              <button className="btn btn-primary" onClick={accept} style={{ flex: 1, justifyContent: 'center', fontSize: '0.85rem', background: 'linear-gradient(135deg,var(--purple-primary),var(--purple-dark))', boxShadow: '0 0 14px var(--purple-glow)' }}>
-                <Download size={13} /> Accept
-              </button>
-              <button className="btn btn-secondary" onClick={reject} style={{ flex: 1, justifyContent: 'center', fontSize: '0.85rem' }}>
-                <X size={13} /> Reject
-              </button>
-            </div>
-          )}
-          {phase === 'accepting' && (
-            <div style={{ textAlign: 'center', padding: '0.75rem 0' }}>
-              <div className="processing-animation" style={{ margin: '0 auto 0.5rem', width: 40, height: 40 }}>
-                <div className="glow-ring" style={{ borderColor: 'var(--purple-primary)' }} />
-                <Activity size={14} className="inner-icon" style={{ color: 'var(--purple-primary)' }} />
-              </div>
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Establishing WebRTC connection…</p>
-            </div>
-          )}
+          <div style={{ display:'flex', gap:'0.5rem' }}>
+            <button className="btn btn-primary" onClick={accept}
+              style={{ flex:1, justifyContent:'center', fontSize:'0.83rem', background:'linear-gradient(135deg,var(--purple-primary),var(--purple-dark))', boxShadow:'0 0 12px var(--purple-glow)' }}>
+              <Download size={12} /> Accept
+            </button>
+            <button className="btn btn-secondary" onClick={reject} style={{ flex:1, justifyContent:'center', fontSize:'0.83rem' }}>
+              <X size={12} /> Reject
+            </button>
+          </div>
         </div>
       )}
 
-      {/* ── RECEIVING ── */}
+      {/* RECEIVING */}
       {phase === 'receiving' && (
-        <div style={{ animation: 'fadeIn 0.2s' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.8rem' }}>
+        <div style={{ animation:'fadeIn 0.2s' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:'0.35rem', marginBottom:'0.7rem' }}>
             <Radio size={11} color="var(--purple-primary)" className="inner-icon" />
-            <span style={{ fontSize: '0.76rem', color: 'var(--purple-primary)' }}>
-              Receiving from <strong style={{ fontFamily: 'var(--font-mono)' }}>{senderCode}</strong>
+            <span style={{ fontSize:'0.74rem', color:'var(--purple-primary)' }}>
+              From <strong style={{ fontFamily:'var(--font-mono)' }}>{senderCode}</strong>
             </span>
           </div>
           <ProgressBlock pct={pct} bytes={rxBytes} total={incoming?.size}
             speed={speed} elapsed={elapsed}
-            color="var(--purple-primary)" label="Receiving via WebRTC DataChannel" />
+            color="var(--purple-primary)" label="Receiving Encrypted File" encrypted />
         </div>
       )}
 
-      {/* ── DONE ── */}
-      {phase === 'done' && (
-        <div style={{ textAlign: 'center', padding: '0.4rem 0', animation: 'fadeIn 0.2s' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', color: 'var(--purple-primary)', marginBottom: '0.45rem' }}>
-            <ShieldCheck size={18} /><strong>Received!</strong>
+      {/* DECRYPTING */}
+      {decrypting && (
+        <div style={{ textAlign:'center', padding:'1rem 0' }}>
+          <div className="processing-animation" style={{ margin:'0 auto 0.55rem', width:44, height:44 }}>
+            <div className="glow-ring" style={{ borderColor:'var(--color-success)' }} />
+            <Unlock size={14} className="inner-icon" style={{ color:'var(--color-success)' }} />
           </div>
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.9rem' }}>
+          <p style={{ color:'var(--text-secondary)', fontSize:'0.79rem' }}>Decrypting AES-256-GCM…</p>
+        </div>
+      )}
+
+      {/* DONE */}
+      {phase === 'done' && !decrypting && (
+        <div style={{ textAlign:'center', padding:'0.4rem 0', animation:'fadeIn 0.2s' }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'0.4rem', color:'var(--purple-primary)', marginBottom:'0.4rem' }}>
+            <ShieldCheck size={17} /><strong>Received &amp; Decrypted!</strong>
+          </div>
+          <p style={{ fontSize:'0.79rem', color:'var(--text-secondary)', marginBottom:'0.85rem' }}>
             {incoming?.name} · {fmtBytes(incoming?.size)} · {elapsed}s
           </p>
-          <div style={{ display: 'flex', gap: '0.55rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <div style={{ display:'flex', gap:'0.5rem', justifyContent:'center', flexWrap:'wrap' }}>
             <button className="btn btn-primary" onClick={saveFile}
-              style={{ fontSize: '0.82rem', justifyContent: 'center', background: 'linear-gradient(135deg,var(--purple-primary),var(--purple-dark))', boxShadow: '0 0 14px var(--purple-glow)' }}>
-              <Download size={13} /> Save File
+              style={{ fontSize:'0.8rem', justifyContent:'center', background:'linear-gradient(135deg,var(--purple-primary),var(--purple-dark))', boxShadow:'0 0 12px var(--purple-glow)' }}>
+              <Download size={12} /> Save File
             </button>
-            <button className="btn btn-secondary" onClick={reset} style={{ fontSize: '0.82rem', justifyContent: 'center' }}>
+            <button className="btn btn-secondary" onClick={reset} style={{ fontSize:'0.8rem', justifyContent:'center' }}>
               Receive Another
             </button>
           </div>
@@ -755,57 +764,54 @@ function ReceiverPanel({ sigStatus, myCode, sendSignal, onSignal, addToast }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
- *  ROOT COMPONENT
+ *  ROOT
  * ══════════════════════════════════════════════════════════════ */
 export default function PeerSimulator({ addToast }) {
-  /* Each panel gets its own signaling connection + peer code */
-  const sender = useSignaling();
-  const receiver = useSignaling();
-
   return (
     <div className="view-card glass-panel" id="peer-simulator-card">
 
-      {/* header */}
-      <div style={{ textAlign: 'center', marginBottom: '1.2rem' }}>
-        <h2 style={{ fontSize: '1.5rem', marginBottom: '0.35rem' }}>Real WebRTC P2P Transfer</h2>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', lineHeight: 1.55 }}>
-          Actual browser-to-browser transfer — works across different tabs, browsers, and devices on the same network.<br />
-          <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>
-            File data flows directly — the signaling server only handles the handshake.
+      <div style={{ textAlign:'center', marginBottom:'1.1rem' }}>
+        <h2 style={{ fontSize:'1.5rem', marginBottom:'0.3rem' }}>
+          Encrypted P2P File Transfer
+        </h2>
+        <p style={{ color:'var(--text-secondary)', fontSize:'0.84rem', lineHeight:1.55 }}>
+          Files are <strong style={{ color:'var(--color-success)' }}>AES-256-GCM encrypted</strong> before leaving your device.<br />
+          <span style={{ color:'var(--text-muted)', fontSize:'0.76rem' }}>
+            Powered by WebRTC via PeerJS — works globally, no server required.
           </span>
         </p>
       </div>
 
-      {/* how-to */}
-      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'center', marginBottom: '1.2rem' }}>
+      {/* steps */}
+      <div style={{ display:'flex', gap:'0.45rem', flexWrap:'wrap', justifyContent:'center', marginBottom:'1.1rem' }}>
         {[
-          ['1', 'Start signal server: npm run dev:all'],
-          ['2', 'Receiver copies their code'],
-          ['3', 'Sender pastes code → Connect'],
-          ['4', 'Pick file → Receiver accepts → Save'],
+          ['1', 'Receiver copies their Code'],
+          ['2', 'Sender pastes code → Connect'],
+          ['3', 'Pick file → Encrypt & Send'],
+          ['4', 'Receiver accepts → Save File'],
         ].map(([n, t]) => (
-          <div key={n} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-            <span style={{ width: 19, height: 19, borderRadius: '50%', background: 'var(--cyan-glow)', border: '1px solid var(--border-glow)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 700, color: 'var(--cyan-primary)', flexShrink: 0 }}>{n}</span>
-            <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>{t}</span>
+          <div key={n} style={{ display:'flex', alignItems:'center', gap:'0.3rem' }}>
+            <span style={{ width:17, height:17, borderRadius:'50%', background:'var(--cyan-glow)', border:'1px solid var(--border-glow)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'0.62rem', fontWeight:700, color:'var(--cyan-primary)', flexShrink:0 }}>{n}</span>
+            <span style={{ fontSize:'0.73rem', color:'var(--text-secondary)' }}>{t}</span>
           </div>
         ))}
       </div>
 
       {/* dual panel */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(255px,1fr))', gap: '1.1rem', alignItems: 'start' }}>
-        <div style={{ background: 'rgba(56,189,248,0.04)', border: '1px solid rgba(56,189,248,0.14)', borderRadius: 13, padding: '1rem' }}>
-          <SenderPanel {...sender} addToast={addToast} />
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(255px,1fr))', gap:'1rem', alignItems:'start' }}>
+        <div style={{ background:'rgba(56,189,248,0.04)', border:'1px solid rgba(56,189,248,0.14)', borderRadius:13, padding:'0.95rem' }}>
+          <SenderPanel addToast={addToast} />
         </div>
-        <div style={{ background: 'rgba(167,139,250,0.04)', border: '1px solid rgba(167,139,250,0.18)', borderRadius: 13, padding: '1rem' }}>
-          <ReceiverPanel {...receiver} addToast={addToast} />
+        <div style={{ background:'rgba(167,139,250,0.04)', border:'1px solid rgba(167,139,250,0.18)', borderRadius:13, padding:'0.95rem' }}>
+          <ReceiverPanel addToast={addToast} />
         </div>
       </div>
 
-      {/* cross-device tip */}
-      <div style={{ marginTop: '1.1rem', padding: '0.75rem 1rem', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-dim)', borderRadius: 10, fontSize: '0.76rem', color: 'var(--text-muted)', lineHeight: 1.55, display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
-        <Wifi size={14} color="var(--cyan-primary)" style={{ flexShrink: 0, marginTop: 2 }} />
+      {/* footer note */}
+      <div style={{ marginTop:'1rem', padding:'0.65rem 0.85rem', background:'rgba(255,255,255,0.02)', border:'1px solid var(--border-dim)', borderRadius:10, fontSize:'0.73rem', color:'var(--text-muted)', lineHeight:1.6, display:'flex', gap:'0.4rem', alignItems:'flex-start' }}>
+        <ShieldCheck size={12} color="var(--color-success)" style={{ flexShrink:0, marginTop:2 }} />
         <span>
-          <strong style={{ color: 'var(--text-secondary)' }}>Using another laptop?</strong> Run <code style={{ fontFamily: 'var(--font-mono)', background: 'rgba(255,255,255,0.06)', borderRadius: 4, padding: '0.1rem 0.35rem' }}>npm run dev:all</code> on this machine, then open <code style={{ fontFamily: 'var(--font-mono)', background: 'rgba(255,255,255,0.06)', borderRadius: 4, padding: '0.1rem 0.35rem' }}>http://YOUR_IP:5173</code> on the other device. Both will connect to the same signal server automatically.
+          <strong style={{ color:'var(--text-secondary)' }}>Double encryption:</strong> Files are AES-256-GCM encrypted in your browser before entering the WebRTC DataChannel (which is itself DTLS-encrypted). The AES key is shared via the DTLS-protected channel — the PeerJS signaling server never sees file data or keys.
         </span>
       </div>
     </div>
