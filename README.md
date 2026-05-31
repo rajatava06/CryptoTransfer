@@ -4,8 +4,6 @@
 
 CryptoTransfer is a robust, purely client-side web application designed to safely encrypt, decrypt, and transfer files securely between devices. Because all cryptography is performed directly within the browser, **no plaintext data or encryption keys are ever sent to a server**, ensuring true zero-knowledge privacy.
 
-![CryptoTransfer Preview](https://via.placeholder.com/1000x500.png?text=CryptoTransfer+Dashboard) <!-- Feel free to replace this with an actual screenshot! -->
-
 ##  Key Features
 
 ###  Core Cryptography
