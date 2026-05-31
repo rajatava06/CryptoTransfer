@@ -1,16 +1,3 @@
-/**
- * PeerSimulator.jsx – Real WebRTC P2P via PeerJS
- * ─────────────────────────────────────────────────
- * Uses PeerJS (free cloud signaling at 0.peerjs.com over WSS).
- * Works on Vercel and any HTTPS host — no local server needed.
- *
- * Features:
- *  • AES-256-GCM file encryption before DataChannel send
- *  • Encryption key exchanged safely via the WebRTC DTLS channel
- *  • Real progress tracking with speed + elapsed time
- *  • Works across different devices / networks globally
- */
-
 import React, { useState, useEffect, useRef } from 'react';
 import Peer from 'peerjs';
 import {
@@ -22,11 +9,11 @@ import {
 
 /* ─── PeerJS config ────────────────────────────────────────── */
 const PEER_CFG = {
-  host:   '0.peerjs.com',
-  port:   443,
-  path:   '/',
-  secure: true,           // wss:// — required on HTTPS / Vercel
-  debug:  0,
+  host: '0.peerjs.com',
+  port: 443,
+  path: '/',
+  secure: true,
+  debug: 0,
   config: {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
@@ -43,7 +30,7 @@ const CHUNK_SIZE = 16384; // 16 KB
 const genCode = () => {
   const CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous chars
   const bytes = crypto.getRandomValues(new Uint8Array(7));
-  const rand  = Array.from(bytes, b => CHARS[b % CHARS.length]).join('');
+  const rand = Array.from(bytes, b => CHARS[b % CHARS.length]).join('');
   return `CT-${rand}`;
 };
 const fmtBytes = (b) => {
@@ -61,7 +48,7 @@ async function encryptFile(buf) {
   const key = await crypto.subtle.generateKey(
     { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']
   );
-  const iv  = crypto.getRandomValues(new Uint8Array(12));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
   const enc = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, buf);
   const raw = await crypto.subtle.exportKey('raw', key);
   return { enc, keyB64: buf2b64(raw), ivB64: buf2b64(iv.buffer) };
@@ -76,17 +63,12 @@ async function decryptFile(encBuf, keyB64, ivB64) {
   );
 }
 
-/* ─── usePeer hook ─────────────────────────────────────────────
- * Code is generated INSIDE the hook so that React Strict Mode's
- * double-mount always gets a fresh ID on the second (real) mount.
- * On unavailable-id collision it auto-retries with a new code.
- * myCode is only exposed after the peer successfully opens.
- * ─────────────────────────────────────────────────────────────── */
+
 function usePeer() {
-  const [myCode,  setMyCode]  = useState('');          // set after open
-  const [status,  setStatus]  = useState('connecting');
-  const [errMsg,  setErrMsg]  = useState('');
-  const peerRef   = useRef(null);
+  const [myCode, setMyCode] = useState('');          // set after open
+  const [status, setStatus] = useState('connecting');
+  const [errMsg, setErrMsg] = useState('');
+  const peerRef = useRef(null);
   const activeRef = useRef(true); // false when effect cleanup ran
 
   useEffect(() => {
@@ -95,7 +77,7 @@ function usePeer() {
     function create() {
       if (!activeRef.current) return;
       const code = genCode(); // fresh code every attempt
-      const p    = new Peer(code, PEER_CFG);
+      const p = new Peer(code, PEER_CFG);
       peerRef.current = p;
 
       p.on('open', () => {
@@ -147,13 +129,15 @@ function usePeer() {
 function StatusBadge({ status, errMsg }) {
   const cfg = {
     connecting: { c: 'var(--color-warning)', ic: <Activity size={11} />, t: 'Connecting to PeerJS cloud…' },
-    connected:  { c: 'var(--color-success)', ic: <Wifi     size={11} />, t: 'Connected — ready for transfer' },
-    error:      { c: 'var(--color-error)',   ic: <WifiOff  size={11} />, t: errMsg || 'Connection error' },
+    connected: { c: 'var(--color-success)', ic: <Wifi size={11} />, t: 'Connected — ready for transfer' },
+    error: { c: 'var(--color-error)', ic: <WifiOff size={11} />, t: errMsg || 'Connection error' },
   };
   const s = cfg[status] || cfg.connecting;
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.71rem', color: s.c,
-      background: `${s.c}18`, border: `1px solid ${s.c}45`, borderRadius: 7, padding: '0.3rem 0.65rem', marginBottom: '0.8rem' }}>
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.71rem', color: s.c,
+      background: `${s.c}18`, border: `1px solid ${s.c}45`, borderRadius: 7, padding: '0.3rem 0.65rem', marginBottom: '0.8rem'
+    }}>
       {s.ic}<span>{s.t}</span>
     </div>
   );
@@ -167,21 +151,25 @@ function CodeBox({ code, label, color, hint }) {
     setCopied(true); setTimeout(() => setCopied(false), 2000);
   };
   return (
-    <div style={{ background: `${color}0e`, border: `1px solid ${color}35`, borderRadius: 9,
-      padding: '0.6rem 0.8rem', marginBottom: '0.8rem' }}>
+    <div style={{
+      background: `${color}0e`, border: `1px solid ${color}35`, borderRadius: 9,
+      padding: '0.6rem 0.8rem', marginBottom: '0.8rem'
+    }}>
       <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: '0.2rem' }}>{label}</div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 5 }}>
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.92rem', fontWeight: 700, color, letterSpacing: '0.06em' }}>
           {code || '…'}
         </span>
         <button onClick={copy}
-          style={{ background: copied ? 'var(--color-success-glow)' : `${color}18`,
+          style={{
+            background: copied ? 'var(--color-success-glow)' : `${color}18`,
             border: `1px solid ${copied ? 'var(--color-success)' : color + '40'}`,
             borderRadius: 6, cursor: 'pointer',
             color: copied ? 'var(--color-success)' : color,
             padding: '0.18rem 0.55rem', fontSize: '0.68rem',
             display: 'flex', alignItems: 'center', gap: 3,
-            transition: 'all 0.2s', flexShrink: 0 }}>
+            transition: 'all 0.2s', flexShrink: 0
+          }}>
           <Copy size={10} />{copied ? 'Copied!' : 'Copy'}
         </button>
       </div>
@@ -199,7 +187,7 @@ function ChunkGrid({ pct, color }) {
         <div key={i} style={{
           aspectRatio: '1', borderRadius: 3,
           background: i < done ? color : 'rgba(255,255,255,0.05)',
-          boxShadow:  i < done ? `0 0 4px ${color}` : 'none',
+          boxShadow: i < done ? `0 0 4px ${color}` : 'none',
           transition: 'background 0.1s, box-shadow 0.1s',
         }} />
       ))}
@@ -211,25 +199,27 @@ function ChunkGrid({ pct, color }) {
 function ProgressBlock({ pct, bytes, total, speed, elapsed, color, label, encrypted }) {
   return (
     <div>
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'0.4rem', marginBottom:'0.7rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', marginBottom: '0.7rem' }}>
         <p style={{ fontWeight: 600, fontSize: '0.86rem', margin: 0 }}>{label}</p>
         {encrypted && (
-          <span style={{ display:'flex', alignItems:'center', gap:3, fontSize:'0.63rem',
-            background:'var(--color-success-glow)', border:'1px solid var(--color-success)',
-            borderRadius:5, padding:'0.08rem 0.38rem', color:'var(--color-success)' }}>
+          <span style={{
+            display: 'flex', alignItems: 'center', gap: 3, fontSize: '0.63rem',
+            background: 'var(--color-success-glow)', border: '1px solid var(--color-success)',
+            borderRadius: 5, padding: '0.08rem 0.38rem', color: 'var(--color-success)'
+          }}>
             <Lock size={8} /> AES-256
           </span>
         )}
       </div>
       <ChunkGrid pct={pct} color={color} />
-      <div style={{ display:'flex', justifyContent:'space-between', fontSize:'0.77rem', marginBottom:'0.3rem' }}>
-        <span style={{ color:'var(--text-muted)' }}>{fmtBytes(bytes)} / {fmtBytes(total)}</span>
-        <span style={{ fontFamily:'var(--font-mono)', fontWeight:700 }}>{Math.min(100,Math.round(pct))}%</span>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.77rem', marginBottom: '0.3rem' }}>
+        <span style={{ color: 'var(--text-muted)' }}>{fmtBytes(bytes)} / {fmtBytes(total)}</span>
+        <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{Math.min(100, Math.round(pct))}%</span>
       </div>
-      <div style={{ height:5, background:'rgba(255,255,255,0.05)', borderRadius:100, overflow:'hidden', marginBottom:'0.4rem' }}>
-        <div style={{ height:'100%', width:`${Math.min(100,pct)}%`, background:color, transition:'width 0.12s linear' }} />
+      <div style={{ height: 5, background: 'rgba(255,255,255,0.05)', borderRadius: 100, overflow: 'hidden', marginBottom: '0.4rem' }}>
+        <div style={{ height: '100%', width: `${Math.min(100, pct)}%`, background: color, transition: 'width 0.12s linear' }} />
       </div>
-      <div style={{ display:'flex', justifyContent:'space-between', fontSize:'0.72rem', color:'var(--text-muted)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
         <span>⏱ {elapsed}s</span><span>⚡ {speed} MB/s</span>
       </div>
     </div>
@@ -243,23 +233,23 @@ function SenderPanel({ addToast }) {
   const { peerRef, myCode, status, errMsg } = usePeer();
 
   const [targetCode, setTarget] = useState('');
-  const [phase, setPhase]       = useState('idle');   // idle|connected|awaiting|encrypting|sending|done
-  const [file, setFile]         = useState(null);
-  const [pct, setPct]           = useState(0);
-  const [speed, setSpeed]       = useState('0.0');
-  const [elapsed, setElapsed]   = useState('0.0');
-  const [txBytes, setTxBytes]   = useState(0);
-  const [isDrag, setIsDrag]     = useState(false);
-  const [connErr, setConnErr]   = useState('');
+  const [phase, setPhase] = useState('idle');   // idle|connected|awaiting|encrypting|sending|done
+  const [file, setFile] = useState(null);
+  const [pct, setPct] = useState(0);
+  const [speed, setSpeed] = useState('0.0');
+  const [elapsed, setElapsed] = useState('0.0');
+  const [txBytes, setTxBytes] = useState(0);
+  const [isDrag, setIsDrag] = useState(false);
+  const [connErr, setConnErr] = useState('');
 
-  const connRef    = useRef(null);
-  const fileRef    = useRef(null);
-  const targetRef  = useRef('');
-  const t0Ref      = useRef(null);
-  const lastRef    = useRef({ b: 0, t: Date.now() });
-  const inputRef   = useRef(null);
+  const connRef = useRef(null);
+  const fileRef = useRef(null);
+  const targetRef = useRef('');
+  const t0Ref = useRef(null);
+  const lastRef = useRef({ b: 0, t: Date.now() });
+  const inputRef = useRef(null);
 
-  useEffect(() => { fileRef.current  = file;       }, [file]);
+  useEffect(() => { fileRef.current = file; }, [file]);
   useEffect(() => { targetRef.current = targetCode; }, [targetCode]);
 
   /* Open connection to receiver */
@@ -322,7 +312,7 @@ function SenderPanel({ addToast }) {
   const runSend = async (f, conn) => {
     setPhase('encrypting');
     try {
-      const raw   = await f.arrayBuffer();
+      const raw = await f.arrayBuffer();
       const { enc, keyB64, ivB64 } = await encryptFile(raw);
 
       /* Send key + metadata first (protected by WebRTC DTLS) */
@@ -334,8 +324,8 @@ function SenderPanel({ addToast }) {
       setPhase('sending');
       t0Ref.current = Date.now();
       lastRef.current = { b: 0, t: Date.now() };
-      const total  = enc.byteLength;
-      let   offset = 0;
+      const total = enc.byteLength;
+      let offset = 0;
 
       const tick = () => {
         if (conn.dataChannel && conn.dataChannel.bufferedAmount > 8 * CHUNK_SIZE) {
@@ -345,10 +335,10 @@ function SenderPanel({ addToast }) {
         conn.send(slice);
         offset += slice.byteLength;
 
-        const p   = (offset / total) * 100;
+        const p = (offset / total) * 100;
         const now = Date.now();
-        const dt  = (now - lastRef.current.t) / 1000;
-        let   spd = speed;
+        const dt = (now - lastRef.current.t) / 1000;
+        let spd = speed;
         if (dt > 0.15) {
           spd = (((offset - lastRef.current.b) / dt) / 1048576).toFixed(1);
           lastRef.current = { b: offset, t: now };
@@ -383,19 +373,19 @@ function SenderPanel({ addToast }) {
   const onDrag = (e) => { e.preventDefault(); setIsDrag(e.type !== 'dragleave' && e.type !== 'drop'); };
   const onDrop = (e) => { e.preventDefault(); setIsDrag(false); pick(e.dataTransfer?.files?.[0]); };
   const onFile = (e) => { pick(e.target.files?.[0]); e.target.value = ''; };
-  const pick   = (f) => { if (f) { setFile(f); setPct(0); setTxBytes(0); setElapsed('0.0'); } };
+  const pick = (f) => { if (f) { setFile(f); setPct(0); setTxBytes(0); setElapsed('0.0'); } };
 
   /* ── render ── */
   return (
     <div style={{ flex: 1, minWidth: 0 }}>
       {/* header */}
-      <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.8rem', paddingBottom:'0.6rem', borderBottom:'1px solid var(--border-dim)' }}>
-        <div style={{ width:27, height:27, borderRadius:7, background:'rgba(56,189,248,0.15)', border:'1px solid rgba(56,189,248,0.3)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.8rem', paddingBottom: '0.6rem', borderBottom: '1px solid var(--border-dim)' }}>
+        <div style={{ width: 27, height: 27, borderRadius: 7, background: 'rgba(56,189,248,0.15)', border: '1px solid rgba(56,189,248,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <ArrowRight size={13} color="var(--cyan-primary)" />
         </div>
         <div>
-          <div style={{ fontWeight:700, fontSize:'0.88rem' }}>Sender</div>
-          <div style={{ fontSize:'0.68rem', color:'var(--text-muted)' }}>Encrypts &amp; sends files</div>
+          <div style={{ fontWeight: 700, fontSize: '0.88rem' }}>Sender</div>
+          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Encrypts &amp; sends files</div>
         </div>
       </div>
 
@@ -409,7 +399,7 @@ function SenderPanel({ addToast }) {
       />
 
       {connErr && (
-        <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', background:'var(--color-error-glow)', border:'1px solid var(--color-error)', borderRadius:7, padding:'0.4rem 0.7rem', marginBottom:'0.8rem', fontSize:'0.77rem', color:'var(--color-error)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'var(--color-error-glow)', border: '1px solid var(--color-error)', borderRadius: 7, padding: '0.4rem 0.7rem', marginBottom: '0.8rem', fontSize: '0.77rem', color: 'var(--color-error)' }}>
           <AlertCircle size={12} />{connErr}
         </div>
       )}
@@ -417,21 +407,21 @@ function SenderPanel({ addToast }) {
       {/* IDLE */}
       {phase === 'idle' && (
         <form onSubmit={connect}>
-          <div className="form-group" style={{ marginBottom:'0.8rem' }}>
-            <label className="form-label" htmlFor="s-target" style={{ fontSize:'0.78rem', marginBottom:'0.3rem' }}>
+          <div className="form-group" style={{ marginBottom: '0.8rem' }}>
+            <label className="form-label" htmlFor="s-target" style={{ fontSize: '0.78rem', marginBottom: '0.3rem' }}>
               Receiver's Code
             </label>
             <input id="s-target" className="form-input" type="text"
               placeholder="CT-XXXXX"
               value={targetCode} onChange={e => setTarget(e.target.value.toUpperCase())}
               autoComplete="off" spellCheck={false}
-              style={{ fontSize:'0.9rem', fontFamily:'var(--font-mono)', letterSpacing:'0.05em' }}
+              style={{ fontSize: '0.9rem', fontFamily: 'var(--font-mono)', letterSpacing: '0.05em' }}
               disabled={status !== 'connected'}
             />
           </div>
           <button className="btn btn-primary" type="submit"
             disabled={!targetCode.trim() || status !== 'connected'}
-            style={{ justifyContent:'center' }}>
+            style={{ justifyContent: 'center' }}>
             <Share2 size={14} /> Connect
           </button>
         </form>
@@ -440,10 +430,10 @@ function SenderPanel({ addToast }) {
       {/* CONNECTED: file picker */}
       {phase === 'connected' && (
         <div>
-          <div style={{ display:'flex', alignItems:'center', gap:'0.35rem', marginBottom:'0.75rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.75rem' }}>
             <Radio size={11} color="var(--color-success)" className="inner-icon" />
-            <span style={{ fontSize:'0.75rem', color:'var(--color-success)' }}>
-              Connected → <strong style={{ fontFamily:'var(--font-mono)' }}>{targetCode}</strong>
+            <span style={{ fontSize: '0.75rem', color: 'var(--color-success)' }}>
+              Connected → <strong style={{ fontFamily: 'var(--font-mono)' }}>{targetCode}</strong>
             </span>
           </div>
 
@@ -451,37 +441,37 @@ function SenderPanel({ addToast }) {
             <div className={`dropzone ${isDrag ? 'active' : ''}`}
               onDragEnter={onDrag} onDragLeave={onDrag} onDragOver={onDrag} onDrop={onDrop}
               onClick={() => inputRef.current?.click()}
-              style={{ padding:'1.3rem 1rem', cursor:'pointer', marginBottom:'0.7rem' }}>
-              <input ref={inputRef} type="file" style={{ display:'none' }} onChange={onFile} />
-              <div className="dropzone-icon-container" style={{ width:'2.2rem', height:'2.2rem' }}><Upload size={14} /></div>
+              style={{ padding: '1.3rem 1rem', cursor: 'pointer', marginBottom: '0.7rem' }}>
+              <input ref={inputRef} type="file" style={{ display: 'none' }} onChange={onFile} />
+              <div className="dropzone-icon-container" style={{ width: '2.2rem', height: '2.2rem' }}><Upload size={14} /></div>
               <div className="dropzone-text">
-                <span className="dropzone-title" style={{ fontSize:'0.82rem' }}>Drop or click to pick file</span>
-                <span className="dropzone-desc" style={{ fontSize:'0.71rem' }}>Will be AES-256-GCM encrypted</span>
+                <span className="dropzone-title" style={{ fontSize: '0.82rem' }}>Drop or click to pick file</span>
+                <span className="dropzone-desc" style={{ fontSize: '0.71rem' }}>Will be AES-256-GCM encrypted</span>
               </div>
             </div>
           ) : (
             <div>
-              <div className="selected-file-card" style={{ marginBottom:'0.7rem' }}>
+              <div className="selected-file-card" style={{ marginBottom: '0.7rem' }}>
                 <div className="file-info-layout">
                   <div className="file-icon"><File size={19} /></div>
                   <div className="file-meta">
-                    <span className="file-name" style={{ maxWidth:130, fontSize:'0.81rem' }}>{file.name}</span>
+                    <span className="file-name" style={{ maxWidth: 130, fontSize: '0.81rem' }}>{file.name}</span>
                     <span className="file-size">{fmtBytes(file.size)}</span>
                   </div>
                 </div>
                 <button className="remove-file-btn" onClick={() => setFile(null)}><X size={13} /></button>
               </div>
-              <div style={{ display:'flex', alignItems:'center', gap:'0.35rem', fontSize:'0.7rem', color:'var(--color-success)', background:'var(--color-success-glow)', borderRadius:7, padding:'0.25rem 0.6rem', marginBottom:'0.7rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.7rem', color: 'var(--color-success)', background: 'var(--color-success-glow)', borderRadius: 7, padding: '0.25rem 0.6rem', marginBottom: '0.7rem' }}>
                 <Lock size={10} /> AES-256-GCM encryption applied before transfer
               </div>
-              <button className="btn btn-primary" onClick={sendRequest} style={{ justifyContent:'center' }}>
+              <button className="btn btn-primary" onClick={sendRequest} style={{ justifyContent: 'center' }}>
                 <Zap size={14} /> Encrypt &amp; Send
               </button>
             </div>
           )}
 
           <button className="btn btn-secondary" onClick={disconnect}
-            style={{ marginTop:'0.6rem', justifyContent:'center', opacity:0.6, fontSize:'0.8rem' }}>
+            style={{ marginTop: '0.6rem', justifyContent: 'center', opacity: 0.6, fontSize: '0.8rem' }}>
             Disconnect
           </button>
         </div>
@@ -489,24 +479,24 @@ function SenderPanel({ addToast }) {
 
       {/* AWAITING */}
       {phase === 'awaiting' && (
-        <div style={{ textAlign:'center', padding:'1.4rem 0' }}>
-          <div className="processing-animation" style={{ margin:'0 auto 0.6rem', width:48, height:48 }}>
+        <div style={{ textAlign: 'center', padding: '1.4rem 0' }}>
+          <div className="processing-animation" style={{ margin: '0 auto 0.6rem', width: 48, height: 48 }}>
             <div className="glow-ring" /><Activity size={16} className="inner-icon" />
           </div>
-          <p style={{ color:'var(--text-secondary)', fontSize:'0.81rem' }}>Waiting for receiver to accept…</p>
-          <p style={{ color:'var(--text-muted)', fontSize:'0.72rem', marginTop:'0.25rem' }}>"{file?.name}"</p>
-          <button className="btn btn-secondary" onClick={disconnect} style={{ marginTop:'0.85rem', fontSize:'0.78rem', justifyContent:'center', opacity:0.6 }}>Cancel</button>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.81rem' }}>Waiting for receiver to accept…</p>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginTop: '0.25rem' }}>"{file?.name}"</p>
+          <button className="btn btn-secondary" onClick={disconnect} style={{ marginTop: '0.85rem', fontSize: '0.78rem', justifyContent: 'center', opacity: 0.6 }}>Cancel</button>
         </div>
       )}
 
       {/* ENCRYPTING */}
       {phase === 'encrypting' && (
-        <div style={{ textAlign:'center', padding:'1.4rem 0' }}>
-          <div className="processing-animation" style={{ margin:'0 auto 0.6rem', width:48, height:48 }}>
-            <div className="glow-ring" style={{ borderColor:'var(--color-success)' }} />
-            <Lock size={16} className="inner-icon" style={{ color:'var(--color-success)' }} />
+        <div style={{ textAlign: 'center', padding: '1.4rem 0' }}>
+          <div className="processing-animation" style={{ margin: '0 auto 0.6rem', width: 48, height: 48 }}>
+            <div className="glow-ring" style={{ borderColor: 'var(--color-success)' }} />
+            <Lock size={16} className="inner-icon" style={{ color: 'var(--color-success)' }} />
           </div>
-          <p style={{ color:'var(--text-secondary)', fontSize:'0.81rem' }}>Encrypting with AES-256-GCM…</p>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.81rem' }}>Encrypting with AES-256-GCM…</p>
         </div>
       )}
 
@@ -519,19 +509,19 @@ function SenderPanel({ addToast }) {
 
       {/* DONE */}
       {phase === 'done' && (
-        <div style={{ textAlign:'center', padding:'0.4rem 0' }}>
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'0.4rem', color:'var(--color-success)', marginBottom:'0.4rem' }}>
+        <div style={{ textAlign: 'center', padding: '0.4rem 0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', color: 'var(--color-success)', marginBottom: '0.4rem' }}>
             <CheckCircle2 size={17} /><strong>Sent &amp; Encrypted!</strong>
           </div>
-          <p style={{ fontSize:'0.79rem', color:'var(--text-secondary)', marginBottom:'0.85rem' }}>
+          <p style={{ fontSize: '0.79rem', color: 'var(--text-secondary)', marginBottom: '0.85rem' }}>
             {file?.name} · {fmtBytes(file?.size)} · {elapsed}s
           </p>
-          <div style={{ display:'flex', gap:'0.5rem', justifyContent:'center', flexWrap:'wrap' }}>
-            <button className="btn btn-primary" style={{ fontSize:'0.8rem', justifyContent:'center' }}
+          <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button className="btn btn-primary" style={{ fontSize: '0.8rem', justifyContent: 'center' }}
               onClick={() => { setPhase('connected'); setFile(null); setPct(0); setTxBytes(0); setElapsed('0.0'); }}>
               Send Another
             </button>
-            <button className="btn btn-secondary" style={{ fontSize:'0.8rem', justifyContent:'center' }} onClick={disconnect}>
+            <button className="btn btn-secondary" style={{ fontSize: '0.8rem', justifyContent: 'center' }} onClick={disconnect}>
               Disconnect
             </button>
           </div>
@@ -547,23 +537,23 @@ function SenderPanel({ addToast }) {
 function ReceiverPanel({ addToast }) {
   const { peerRef, myCode, status, errMsg } = usePeer();
 
-  const [phase, setPhase]       = useState('waiting');
+  const [phase, setPhase] = useState('waiting');
   const [incoming, setIncoming] = useState(null);     // { name, size }
   const [senderCode, setSender] = useState('');
-  const [pct, setPct]           = useState(0);
-  const [speed, setSpeed]       = useState('0.0');
-  const [elapsed, setElapsed]   = useState('0.0');
-  const [rxBytes, setRxBytes]   = useState(0);
-  const [savedBlob, setSaved]   = useState(null);
-  const [decrypting, setDec]    = useState(false);
+  const [pct, setPct] = useState(0);
+  const [speed, setSpeed] = useState('0.0');
+  const [elapsed, setElapsed] = useState('0.0');
+  const [rxBytes, setRxBytes] = useState(0);
+  const [savedBlob, setSaved] = useState(null);
+  const [decrypting, setDec] = useState(false);
 
-  const connRef   = useRef(null);
+  const connRef = useRef(null);
   const chunksRef = useRef([]);
-  const metaRef   = useRef(null);
-  const keyRef    = useRef(null);
-  const t0Ref     = useRef(null);
-  const lastRef   = useRef({ b: 0, t: Date.now() });
-  const phaseRef  = useRef('waiting');
+  const metaRef = useRef(null);
+  const keyRef = useRef(null);
+  const t0Ref = useRef(null);
+  const lastRef = useRef({ b: 0, t: Date.now() });
+  const phaseRef = useRef('waiting');
 
   useEffect(() => { phaseRef.current = phase; }, [phase]);
 
@@ -584,13 +574,13 @@ function ReceiverPanel({ addToast }) {
             setSender(conn.peer);
             setPhase('incoming');
             chunksRef.current = [];
-            metaRef.current   = null;
-            keyRef.current    = null;
+            metaRef.current = null;
+            keyRef.current = null;
             addToast(`📡 "${msg.fileName}" from ${conn.peer}`, 'info');
           }
 
           if (msg.type === 'key') {
-            keyRef.current  = { keyB64: msg.keyB64, ivB64: msg.ivB64 };
+            keyRef.current = { keyB64: msg.keyB64, ivB64: msg.ivB64 };
             metaRef.current = msg.meta;
             chunksRef.current = [];
           }
@@ -602,11 +592,11 @@ function ReceiverPanel({ addToast }) {
           /* Binary chunk */
           chunksRef.current.push(raw);
           const received = chunksRef.current.reduce((a, c) => a + c.byteLength, 0);
-          const total    = metaRef.current?.size ?? 0;
-          const p        = total ? (received / total) * 100 : 0;
-          const now      = Date.now();
-          const dt       = (now - lastRef.current.t) / 1000;
-          let   spd      = '0.0';
+          const total = metaRef.current?.size ?? 0;
+          const p = total ? (received / total) * 100 : 0;
+          const now = Date.now();
+          const dt = (now - lastRef.current.t) / 1000;
+          let spd = '0.0';
           if (dt > 0.15) {
             spd = (((received - lastRef.current.b) / dt) / 1048576).toFixed(1);
             lastRef.current = { b: received, t: now };
@@ -647,11 +637,11 @@ function ReceiverPanel({ addToast }) {
   const finalize = async () => {
     setDec(true);
     try {
-      const encBuf    = await new Blob(chunksRef.current).arrayBuffer();
+      const encBuf = await new Blob(chunksRef.current).arrayBuffer();
       const { keyB64, ivB64 } = keyRef.current;
-      const decBuf    = await decryptFile(encBuf, keyB64, ivB64);
-      const meta      = metaRef.current;
-      const blob      = new Blob([decBuf], { type: meta?.mime || 'application/octet-stream' });
+      const decBuf = await decryptFile(encBuf, keyB64, ivB64);
+      const meta = metaRef.current;
+      const blob = new Blob([decBuf], { type: meta?.mime || 'application/octet-stream' });
       setSaved({ blob, name: meta?.name || 'received-file' });
       setPhase('done'); setPct(100);
       setRxBytes(meta?.origSize ?? encBuf.byteLength);
@@ -668,7 +658,7 @@ function ReceiverPanel({ addToast }) {
   const saveFile = () => {
     if (!savedBlob) return;
     const url = URL.createObjectURL(savedBlob.blob);
-    const a   = document.createElement('a');
+    const a = document.createElement('a');
     a.href = url; a.download = savedBlob.name;
     document.body.appendChild(a); a.click();
     document.body.removeChild(a); URL.revokeObjectURL(url);
@@ -686,16 +676,16 @@ function ReceiverPanel({ addToast }) {
   return (
     <div style={{ flex: 1, minWidth: 0 }}>
       {/* header */}
-      <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.8rem', paddingBottom:'0.6rem', borderBottom:'1px solid var(--border-dim)' }}>
-        <div style={{ width:27, height:27, borderRadius:7, background:'rgba(167,139,250,0.15)', border:'1px solid rgba(167,139,250,0.3)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.8rem', paddingBottom: '0.6rem', borderBottom: '1px solid var(--border-dim)' }}>
+        <div style={{ width: 27, height: 27, borderRadius: 7, background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <ArrowLeft size={13} color="var(--purple-primary)" />
         </div>
         <div>
-          <div style={{ fontWeight:700, fontSize:'0.88rem' }}>Receiver</div>
-          <div style={{ fontSize:'0.68rem', color:'var(--text-muted)' }}>Decrypts &amp; saves files</div>
+          <div style={{ fontWeight: 700, fontSize: '0.88rem' }}>Receiver</div>
+          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Decrypts &amp; saves files</div>
         </div>
         {phase === 'incoming' && (
-          <div style={{ marginLeft:'auto', width:8, height:8, borderRadius:'50%', background:'var(--color-warning)', boxShadow:'0 0 8px var(--color-warning)', animation:'pulse 1s ease-in-out infinite' }} />
+          <div style={{ marginLeft: 'auto', width: 8, height: 8, borderRadius: '50%', background: 'var(--color-warning)', boxShadow: '0 0 8px var(--color-warning)', animation: 'pulse 1s ease-in-out infinite' }} />
         )}
       </div>
 
@@ -710,45 +700,45 @@ function ReceiverPanel({ addToast }) {
 
       {/* WAITING */}
       {phase === 'waiting' && (
-        <div style={{ textAlign:'center', padding:'1.5rem 1rem', border:'1px dashed rgba(167,139,250,0.22)', borderRadius:11, background:'rgba(167,139,250,0.03)' }}>
-          <div className="processing-animation" style={{ margin:'0 auto 0.6rem', width:48, height:48 }}>
-            <div className="glow-ring" style={{ borderColor:'var(--purple-primary)', boxShadow:'0 0 14px var(--purple-glow)' }} />
-            <ArrowDown size={15} className="inner-icon" style={{ color:'var(--purple-primary)' }} />
+        <div style={{ textAlign: 'center', padding: '1.5rem 1rem', border: '1px dashed rgba(167,139,250,0.22)', borderRadius: 11, background: 'rgba(167,139,250,0.03)' }}>
+          <div className="processing-animation" style={{ margin: '0 auto 0.6rem', width: 48, height: 48 }}>
+            <div className="glow-ring" style={{ borderColor: 'var(--purple-primary)', boxShadow: '0 0 14px var(--purple-glow)' }} />
+            <ArrowDown size={15} className="inner-icon" style={{ color: 'var(--purple-primary)' }} />
           </div>
-          <p style={{ fontSize:'0.8rem', color:'var(--text-secondary)', lineHeight:1.55 }}>
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.55 }}>
             Listening for incoming files…<br />
-            <span style={{ fontSize:'0.71rem', color:'var(--text-muted)' }}>Works across any device worldwide</span>
+            <span style={{ fontSize: '0.71rem', color: 'var(--text-muted)' }}>Works across any device worldwide</span>
           </p>
         </div>
       )}
 
       {/* INCOMING */}
       {(phase === 'incoming') && (
-        <div style={{ animation:'fadeIn 0.2s' }}>
-          <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', background:'hsla(37,90%,51%,0.1)', border:'1px solid var(--color-warning)', borderRadius:8, padding:'0.45rem 0.75rem', marginBottom:'0.75rem' }}>
+        <div style={{ animation: 'fadeIn 0.2s' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'hsla(37,90%,51%,0.1)', border: '1px solid var(--color-warning)', borderRadius: 8, padding: '0.45rem 0.75rem', marginBottom: '0.75rem' }}>
             <Bell size={12} color="var(--color-warning)" />
-            <span style={{ fontSize:'0.77rem', color:'var(--color-warning)', fontWeight:600 }}>Incoming Transfer</span>
+            <span style={{ fontSize: '0.77rem', color: 'var(--color-warning)', fontWeight: 600 }}>Incoming Transfer</span>
           </div>
-          <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid var(--border-dim)', borderRadius:9, padding:'0.75rem', marginBottom:'0.75rem' }}>
-            <div style={{ fontSize:'0.68rem', color:'var(--text-muted)', marginBottom:'0.2rem' }}>From</div>
-            <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.82rem', color:'var(--purple-primary)', fontWeight:700, marginBottom:'0.6rem' }}>{senderCode}</div>
-            <div style={{ display:'flex', alignItems:'center', gap:'0.55rem', background:'rgba(56,189,248,0.05)', borderRadius:7, padding:'0.5rem 0.75rem' }}>
-              <File size={16} color="var(--cyan-primary)" style={{ flexShrink:0 }} />
+          <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-dim)', borderRadius: 9, padding: '0.75rem', marginBottom: '0.75rem' }}>
+            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: '0.2rem' }}>From</div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', color: 'var(--purple-primary)', fontWeight: 700, marginBottom: '0.6rem' }}>{senderCode}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', background: 'rgba(56,189,248,0.05)', borderRadius: 7, padding: '0.5rem 0.75rem' }}>
+              <File size={16} color="var(--cyan-primary)" style={{ flexShrink: 0 }} />
               <div>
-                <div style={{ fontWeight:600, fontSize:'0.83rem' }}>{incoming?.name}</div>
-                <div style={{ fontSize:'0.71rem', color:'var(--text-muted)' }}>{fmtBytes(incoming?.size)}</div>
+                <div style={{ fontWeight: 600, fontSize: '0.83rem' }}>{incoming?.name}</div>
+                <div style={{ fontSize: '0.71rem', color: 'var(--text-muted)' }}>{fmtBytes(incoming?.size)}</div>
               </div>
             </div>
-            <div style={{ display:'flex', alignItems:'center', gap:'0.3rem', fontSize:'0.68rem', color:'var(--color-success)', marginTop:'0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.68rem', color: 'var(--color-success)', marginTop: '0.5rem' }}>
               <Lock size={9} /> File is AES-256-GCM encrypted — decrypted after receive
             </div>
           </div>
-          <div style={{ display:'flex', gap:'0.5rem' }}>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
             <button className="btn btn-primary" onClick={accept}
-              style={{ flex:1, justifyContent:'center', fontSize:'0.83rem', background:'linear-gradient(135deg,var(--purple-primary),var(--purple-dark))', boxShadow:'0 0 12px var(--purple-glow)' }}>
+              style={{ flex: 1, justifyContent: 'center', fontSize: '0.83rem', background: 'linear-gradient(135deg,var(--purple-primary),var(--purple-dark))', boxShadow: '0 0 12px var(--purple-glow)' }}>
               <Download size={12} /> Accept
             </button>
-            <button className="btn btn-secondary" onClick={reject} style={{ flex:1, justifyContent:'center', fontSize:'0.83rem' }}>
+            <button className="btn btn-secondary" onClick={reject} style={{ flex: 1, justifyContent: 'center', fontSize: '0.83rem' }}>
               <X size={12} /> Reject
             </button>
           </div>
@@ -757,11 +747,11 @@ function ReceiverPanel({ addToast }) {
 
       {/* RECEIVING */}
       {phase === 'receiving' && (
-        <div style={{ animation:'fadeIn 0.2s' }}>
-          <div style={{ display:'flex', alignItems:'center', gap:'0.35rem', marginBottom:'0.7rem' }}>
+        <div style={{ animation: 'fadeIn 0.2s' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.7rem' }}>
             <Radio size={11} color="var(--purple-primary)" className="inner-icon" />
-            <span style={{ fontSize:'0.74rem', color:'var(--purple-primary)' }}>
-              From <strong style={{ fontFamily:'var(--font-mono)' }}>{senderCode}</strong>
+            <span style={{ fontSize: '0.74rem', color: 'var(--purple-primary)' }}>
+              From <strong style={{ fontFamily: 'var(--font-mono)' }}>{senderCode}</strong>
             </span>
           </div>
           <ProgressBlock pct={pct} bytes={rxBytes} total={incoming?.size}
@@ -772,30 +762,30 @@ function ReceiverPanel({ addToast }) {
 
       {/* DECRYPTING */}
       {decrypting && (
-        <div style={{ textAlign:'center', padding:'1rem 0' }}>
-          <div className="processing-animation" style={{ margin:'0 auto 0.55rem', width:44, height:44 }}>
-            <div className="glow-ring" style={{ borderColor:'var(--color-success)' }} />
-            <Unlock size={14} className="inner-icon" style={{ color:'var(--color-success)' }} />
+        <div style={{ textAlign: 'center', padding: '1rem 0' }}>
+          <div className="processing-animation" style={{ margin: '0 auto 0.55rem', width: 44, height: 44 }}>
+            <div className="glow-ring" style={{ borderColor: 'var(--color-success)' }} />
+            <Unlock size={14} className="inner-icon" style={{ color: 'var(--color-success)' }} />
           </div>
-          <p style={{ color:'var(--text-secondary)', fontSize:'0.79rem' }}>Decrypting AES-256-GCM…</p>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.79rem' }}>Decrypting AES-256-GCM…</p>
         </div>
       )}
 
       {/* DONE */}
       {phase === 'done' && !decrypting && (
-        <div style={{ textAlign:'center', padding:'0.4rem 0', animation:'fadeIn 0.2s' }}>
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'0.4rem', color:'var(--purple-primary)', marginBottom:'0.4rem' }}>
+        <div style={{ textAlign: 'center', padding: '0.4rem 0', animation: 'fadeIn 0.2s' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', color: 'var(--purple-primary)', marginBottom: '0.4rem' }}>
             <ShieldCheck size={17} /><strong>Received &amp; Decrypted!</strong>
           </div>
-          <p style={{ fontSize:'0.79rem', color:'var(--text-secondary)', marginBottom:'0.85rem' }}>
+          <p style={{ fontSize: '0.79rem', color: 'var(--text-secondary)', marginBottom: '0.85rem' }}>
             {incoming?.name} · {fmtBytes(incoming?.size)} · {elapsed}s
           </p>
-          <div style={{ display:'flex', gap:'0.5rem', justifyContent:'center', flexWrap:'wrap' }}>
+          <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', flexWrap: 'wrap' }}>
             <button className="btn btn-primary" onClick={saveFile}
-              style={{ fontSize:'0.8rem', justifyContent:'center', background:'linear-gradient(135deg,var(--purple-primary),var(--purple-dark))', boxShadow:'0 0 12px var(--purple-glow)' }}>
+              style={{ fontSize: '0.8rem', justifyContent: 'center', background: 'linear-gradient(135deg,var(--purple-primary),var(--purple-dark))', boxShadow: '0 0 12px var(--purple-glow)' }}>
               <Download size={12} /> Save File
             </button>
-            <button className="btn btn-secondary" onClick={reset} style={{ fontSize:'0.8rem', justifyContent:'center' }}>
+            <button className="btn btn-secondary" onClick={reset} style={{ fontSize: '0.8rem', justifyContent: 'center' }}>
               Receive Another
             </button>
           </div>
@@ -812,48 +802,48 @@ export default function PeerSimulator({ addToast }) {
   return (
     <div className="view-card glass-panel" id="peer-simulator-card">
 
-      <div style={{ textAlign:'center', marginBottom:'1.1rem' }}>
-        <h2 style={{ fontSize:'1.5rem', marginBottom:'0.3rem' }}>
+      <div style={{ textAlign: 'center', marginBottom: '1.1rem' }}>
+        <h2 style={{ fontSize: '1.5rem', marginBottom: '0.3rem' }}>
           Encrypted P2P File Transfer
         </h2>
-        <p style={{ color:'var(--text-secondary)', fontSize:'0.84rem', lineHeight:1.55 }}>
-          Files are <strong style={{ color:'var(--color-success)' }}>AES-256-GCM encrypted</strong> before leaving your device.<br />
-          <span style={{ color:'var(--text-muted)', fontSize:'0.76rem' }}>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.84rem', lineHeight: 1.55 }}>
+          Files are <strong style={{ color: 'var(--color-success)' }}>AES-256-GCM encrypted</strong> before leaving your device.<br />
+          <span style={{ color: 'var(--text-muted)', fontSize: '0.76rem' }}>
             Powered by WebRTC via PeerJS — works globally, no server required.
           </span>
         </p>
       </div>
 
       {/* steps */}
-      <div style={{ display:'flex', gap:'0.45rem', flexWrap:'wrap', justifyContent:'center', marginBottom:'1.1rem' }}>
+      <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap', justifyContent: 'center', marginBottom: '1.1rem' }}>
         {[
           ['1', 'Receiver copies their Code'],
           ['2', 'Sender pastes code → Connect'],
           ['3', 'Pick file → Encrypt & Send'],
           ['4', 'Receiver accepts → Save File'],
         ].map(([n, t]) => (
-          <div key={n} style={{ display:'flex', alignItems:'center', gap:'0.3rem' }}>
-            <span style={{ width:17, height:17, borderRadius:'50%', background:'var(--cyan-glow)', border:'1px solid var(--border-glow)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'0.62rem', fontWeight:700, color:'var(--cyan-primary)', flexShrink:0 }}>{n}</span>
-            <span style={{ fontSize:'0.73rem', color:'var(--text-secondary)' }}>{t}</span>
+          <div key={n} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+            <span style={{ width: 17, height: 17, borderRadius: '50%', background: 'var(--cyan-glow)', border: '1px solid var(--border-glow)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.62rem', fontWeight: 700, color: 'var(--cyan-primary)', flexShrink: 0 }}>{n}</span>
+            <span style={{ fontSize: '0.73rem', color: 'var(--text-secondary)' }}>{t}</span>
           </div>
         ))}
       </div>
 
       {/* dual panel */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(255px,1fr))', gap:'1rem', alignItems:'start' }}>
-        <div style={{ background:'rgba(56,189,248,0.04)', border:'1px solid rgba(56,189,248,0.14)', borderRadius:13, padding:'0.95rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(255px,1fr))', gap: '1rem', alignItems: 'stretch' }}>
+        <div style={{ background: 'rgba(56,189,248,0.04)', border: '1px solid rgba(56,189,248,0.14)', borderRadius: 13, padding: '0.95rem', height: '100%' }}>
           <SenderPanel addToast={addToast} />
         </div>
-        <div style={{ background:'rgba(167,139,250,0.04)', border:'1px solid rgba(167,139,250,0.18)', borderRadius:13, padding:'0.95rem' }}>
+        <div style={{ background: 'rgba(167,139,250,0.04)', border: '1px solid rgba(167,139,250,0.18)', borderRadius: 13, padding: '0.95rem', height: '100%' }}>
           <ReceiverPanel addToast={addToast} />
         </div>
       </div>
 
       {/* footer note */}
-      <div style={{ marginTop:'1rem', padding:'0.65rem 0.85rem', background:'rgba(255,255,255,0.02)', border:'1px solid var(--border-dim)', borderRadius:10, fontSize:'0.73rem', color:'var(--text-muted)', lineHeight:1.6, display:'flex', gap:'0.4rem', alignItems:'flex-start' }}>
-        <ShieldCheck size={12} color="var(--color-success)" style={{ flexShrink:0, marginTop:2 }} />
+      <div style={{ marginTop: '1rem', padding: '0.65rem 0.85rem', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-dim)', borderRadius: 10, fontSize: '0.73rem', color: 'var(--text-muted)', lineHeight: 1.6, display: 'flex', gap: '0.4rem', alignItems: 'flex-start' }}>
+        <ShieldCheck size={12} color="var(--color-success)" style={{ flexShrink: 0, marginTop: 2 }} />
         <span>
-          <strong style={{ color:'var(--text-secondary)' }}>Double encryption:</strong> Files are AES-256-GCM encrypted in your browser before entering the WebRTC DataChannel (which is itself DTLS-encrypted). The AES key is shared via the DTLS-protected channel — the PeerJS signaling server never sees file data or keys.
+          <strong style={{ color: 'var(--text-secondary)' }}>Double encryption:</strong> Files are AES-256-GCM encrypted in your browser before entering the WebRTC DataChannel (which is itself DTLS-encrypted). The AES key is shared via the DTLS-protected channel — the PeerJS signaling server never sees file data or keys.
         </span>
       </div>
     </div>
