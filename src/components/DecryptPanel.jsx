@@ -86,7 +86,7 @@ export default function DecryptPanel({ addToast }) {
     setDecryptedFile(null);
 
     try {
-      // Read file buffer
+    
       const buffer = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result);

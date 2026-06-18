@@ -71,7 +71,6 @@ export default function EncryptPanel({ passwordKey, setPasswordKey, addToast }) 
     setShareLink('');
 
     try {
-      // Simulate cryptographic progression for smooth UI visual transitions
       const interval = setInterval(() => {
         setProgress((prev) => {
           if (prev >= 80) {
@@ -82,7 +81,7 @@ export default function EncryptPanel({ passwordKey, setPasswordKey, addToast }) 
         });
       }, 100);
 
-      // Perform local encryption
+
       const encryptedBuffer = await encryptFile(file, password);
       
       clearInterval(interval);
