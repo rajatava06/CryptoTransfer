@@ -230,16 +230,24 @@ a:hover {
 /* ─── Nav Tabs — iOS-26 Glider ──────────────────────────────── */
 .nav-tabs {
   display: flex;
-  gap: 0.25rem;
-  background: rgba(255, 255, 255, 0.03);
-  padding: 0.35rem;
-  border-radius: 0.75rem;
-  border: 1px solid var(--border-dim);
+  gap: 0.35rem;
+  background: rgba(18, 24, 38, 0.82);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  padding: 0.45rem 0.55rem;
+  border-radius: 22px; /* Apple continuous rounded squircle container */
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    0 16px 36px -8px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
   width: fit-content;
-  margin: 2rem auto;
+  margin: 2.2rem auto 2rem;
   max-width: 100%;
   overflow-x: auto;
+  scroll-behavior: smooth;
   scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
   /* Glider needs a positioned parent */
   position: relative;
 }
@@ -248,17 +256,17 @@ a:hover {
   display: none;
 }
 
-/* ── Glider pill — the sliding highlight ── */
+/* ── Glider pill — Apple continuous rounded sliding highlight ── */
 .nav-glider {
   position: absolute;
-  top: 0.35rem;
+  top: 0;
   left: 0;
-  border-radius: 0.5rem;
-  background: linear-gradient(135deg, var(--cyan-dark) 0%, var(--purple-dark) 100%);
+  border-radius: 16px; /* Apple continuous rounded pill inner */
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.95) 0%, rgba(139, 92, 246, 0.95) 100%);
   box-shadow:
-    0 2px 12px rgba(0, 0, 0, 0.3),
-    0 0 0 1px rgba(56, 189, 248, 0.18),
-    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+    0 4px 20px rgba(139, 92, 246, 0.45),
+    0 0 0 1px rgba(168, 85, 247, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
   /* Spring-like easing — feels physically weighted */
   transition:
     transform 0.38s cubic-bezier(0.34, 1.56, 0.64, 1),
@@ -277,9 +285,9 @@ a:hover {
   inset: 0;
   background: linear-gradient(
     115deg,
-    rgba(255, 255, 255, 0.18) 0%,
-    rgba(255, 255, 255, 0.04) 40%,
-    transparent 60%
+    rgba(255, 255, 255, 0.28) 0%,
+    rgba(255, 255, 255, 0.08) 40%,
+    transparent 65%
   );
   border-radius: inherit;
   pointer-events: none;
@@ -292,28 +300,33 @@ a:hover {
   font-family: var(--font-heading);
   font-weight: 500;
   font-size: 0.95rem;
-  padding: 0.65rem 1.25rem;
-  border-radius: 0.5rem;
+  padding: 0.75rem 1.4rem;
+  border-radius: 16px; /* Apple icon continuous squircle */
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  /* Only transition color — background comes from the glider */
-  transition: color var(--transition-fast);
+  gap: 0.55rem;
+  min-height: 46px;
+  /* Only transition color & transform */
+  transition: color var(--transition-fast), transform 0.15s ease;
   white-space: nowrap;
   position: relative;
   z-index: 1; /* sit above the glider */
+  flex-shrink: 0;
 }
 
 .tab-btn:hover {
   color: var(--text-primary);
 }
 
+.tab-btn:active {
+  transform: scale(0.96);
+}
+
 .tab-btn.active {
-  /* Background handled by .nav-glider — just update text */
-  color: var(--text-primary);
+  color: #ffffff;
   font-weight: 600;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
 }
 
 /* Main Workspace layout */
@@ -1038,6 +1051,28 @@ a:hover {
   }
 }
 
+@keyframes slide-down {
+  0% {
+    opacity: 0;
+    transform: translateY(-20px) scaleY(0.92);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+@keyframes item-cascade {
+  0% {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* Toast Notifications */
 .toast-container {
   position: fixed;
@@ -1149,8 +1184,29 @@ a:hover {
   transition: var(--transition-fast);
 }
 
+.hamburger-btn {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-dim);
+  border-radius: 0.5rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.hamburger-btn svg {
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.hamburger-btn.open svg {
+  transform: rotate(90deg);
+}
+
 .hamburger-btn:hover {
   background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
 }
 
 .mobile-menu-dropdown {
@@ -1158,39 +1214,51 @@ a:hover {
   top: 100%;
   left: 0;
   width: 100%;
-  background: var(--bg-panel);
-  border-bottom: 1px solid var(--border-dim);
+  background: rgba(18, 24, 38, 0.95);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
   padding: 1rem;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
   z-index: 99;
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
-  animation: slide-up 0.2s ease-out;
+  box-shadow: 0 16px 36px -6px rgba(0, 0, 0, 0.6);
+  transform-origin: top center;
+  animation: slide-down 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .mobile-menu-item {
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(255, 255, 255, 0.03);
   border: 1px solid var(--border-dim);
   color: var(--text-secondary);
   padding: 0.75rem 1rem;
-  border-radius: 8px;
+  border-radius: 12px;
   font-family: var(--font-heading);
   font-weight: 500;
   font-size: 0.95rem;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.6rem;
   cursor: pointer;
   text-align: left;
   width: 100%;
   transition: var(--transition-fast);
+  animation: item-cascade 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.mobile-menu-item:nth-child(1) {
+  animation-delay: 0.04s;
+}
+
+.mobile-menu-item:nth-child(2) {
+  animation-delay: 0.09s;
 }
 
 .mobile-menu-item:hover,
 .mobile-menu-item.active {
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.07);
   border-color: var(--cyan-primary);
 }
 
@@ -1378,20 +1446,21 @@ a:hover {
 
   /* ── Navigation tabs ── */
   .nav-tabs {
-    /* fit-content + margin:auto = self-centered pill */
     width: fit-content;
-    max-width: calc(100vw - 1.5rem);
-    margin: 1rem auto;
-    padding: 0.3rem;
-    gap: 0.3rem;
-    /* justify-content intentionally NOT set to center —
-       center + overflow-x:auto creates a phantom left gap.
-       margin:auto on the container handles centering instead. */
+    max-width: calc(100vw - 1.25rem);
+    margin: 1.25rem auto;
+    padding: 0.4rem;
+    gap: 0.35rem;
     justify-content: flex-start;
     overflow-x: auto;
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
     display: flex;
+    border-radius: 20px; /* Rounded squircle on mobile */
+    background: rgba(18, 24, 38, 0.85);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    box-shadow: 0 10px 28px -6px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.12);
   }
 
   .nav-tabs::-webkit-scrollbar {
@@ -1399,43 +1468,17 @@ a:hover {
   }
 
   .tab-btn {
-    padding: 0.55rem 0.9rem;
-    font-size: 0.82rem;
-    gap: 0.35rem;
-    border-radius: 0.4rem;
-    flex-shrink: 0; /* prevent tabs from squishing */
-    min-height: 40px;
+    padding: 0.65rem 1.1rem;
+    font-size: 0.88rem;
+    gap: 0.45rem;
+    border-radius: 14px; /* Rounded squircle on mobile buttons */
+    flex-shrink: 0; /* prevent tabs from squishing for scrollable tab bar */
+    min-height: 44px;
   }
 
   .tab-btn svg {
-    width: 14px;
-    height: 14px;
-  }
-
-  /* ── Swipe hint dots — page-control indicator below panel ── */
-  .swipe-hint {
-    display: flex !important; /* show only on mobile */
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    padding: 0.6rem 0 0.2rem;
-  }
-
-  .swipe-hint-dot {
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.2);
-    transition: background 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
-                transform  0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
-                width      0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
-  }
-
-  .swipe-hint-dot.active {
-    background: var(--cyan-primary);
     width: 16px;
-    border-radius: 3px;
-    box-shadow: 0 0 6px var(--cyan-glow);
+    height: 16px;
   }
 
   /* ── View cards ── */
@@ -1666,13 +1709,16 @@ a:hover {
   }
 
   .tab-btn {
-    padding: 0.5rem 0.75rem;
-    font-size: 0.78rem;
+    padding: 0.6rem 0.95rem;
+    font-size: 0.82rem;
+    border-radius: 14px;
   }
 
-  /* Hide tab icons on very narrow screens to save space */
+  /* Keep tab icons visible for WhatsApp iOS style scrollable tabs */
   .tab-btn svg {
-    display: none;
+    display: inline-block;
+    width: 15px;
+    height: 15px;
   }
 
   .btn {

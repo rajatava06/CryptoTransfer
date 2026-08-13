@@ -140,7 +140,7 @@ export default function Header({ activeTab, setActiveTab, setContactOpen }) {
           <button
             type="button"
             onClick={() => setMenuOpen(!menuOpen)}
-            className="hamburger-btn"
+            className={`hamburger-btn ${menuOpen ? 'open' : ''}`}
             aria-label="Toggle menu"
             id="hamburger-menu-toggle"
           >

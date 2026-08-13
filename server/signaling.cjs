@@ -6,8 +6,6 @@ const wss  = new WebSocketServer({ host: '0.0.0.0', port: PORT });
 
 
 const peers = new Map();
-
-
 function send(ws, obj) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(obj));

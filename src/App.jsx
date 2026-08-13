@@ -27,13 +27,12 @@ export default function App() {
   // ── Glider state for nav-tabs ──────────────────────────────────
   const navRef = useRef(null);
   const tabRefs = useRef({});
-  const [glider, setGlider] = useState({ left: 0, width: 0, opacity: 0 });
+  const [glider, setGlider] = useState({ left: 0, top: 0, width: 0, height: 0, opacity: 0 });
 
-  useLayoutEffect(() => {
+  const updateGlider = () => {
     const navEl = navRef.current;
     const activeEl = tabRefs.current[activeTab];
     if (!navEl || !activeEl) {
-      // Tab not present in the nav-tabs (e.g. 'info' / Security Specs) — hide glider
       setGlider(prev => ({ ...prev, opacity: 0 }));
       return;
     }
@@ -42,13 +41,61 @@ export default function App() {
     const elRect = activeEl.getBoundingClientRect();
     setGlider({
       left: elRect.left - navRect.left + navEl.scrollLeft,
+      top: elRect.top - navRect.top + navEl.scrollTop,
       width: elRect.width,
       height: elRect.height,
       opacity: 1,
     });
+  };
+
+  useLayoutEffect(() => {
+    const navEl = navRef.current;
+    const activeEl = tabRefs.current[activeTab];
+    if (!navEl || !activeEl) {
+      setGlider(prev => ({ ...prev, opacity: 0 }));
+      return;
+    }
+
+    // Scroll active tab smoothly to center of navigation bar (WhatsApp iOS style)
+    const navWidth = navEl.clientWidth;
+    const elLeft = activeEl.offsetLeft;
+    const elWidth = activeEl.clientWidth;
+    const targetScrollLeft = elLeft - navWidth / 2 + elWidth / 2;
+
+    navEl.scrollTo({
+      left: targetScrollLeft,
+      behavior: 'smooth',
+    });
+
+    updateGlider();
   }, [activeTab]);
 
-  // ── Touch-swipe on main content (not the scrollable nav) ─────
+  useEffect(() => {
+    const navEl = navRef.current;
+    if (!navEl) return;
+
+    const handleScroll = () => {
+      updateGlider();
+    };
+
+    const handleWheel = (e) => {
+      if (e.deltaY !== 0) {
+        navEl.scrollLeft += e.deltaY;
+      }
+    };
+
+    navEl.addEventListener('scroll', handleScroll, { passive: true });
+    navEl.addEventListener('wheel', handleWheel, { passive: true });
+    window.addEventListener('resize', updateGlider);
+
+    return () => {
+      navEl.removeEventListener('scroll', handleScroll);
+      navEl.removeEventListener('wheel', handleWheel);
+      window.removeEventListener('resize', updateGlider);
+    };
+  }, [activeTab]);
+
+
   const swipeStartX = useRef(null);
   const swipeStartY = useRef(null);
   const swipeLocked = useRef(null); // 'h' | 'v' | null
@@ -143,7 +190,7 @@ export default function App() {
                 opacity: glider.opacity,
                 width: glider.width,
                 height: glider.height,
-                transform: `translateX(${glider.left}px)`,
+                transform: `translate(${glider.left}px, ${glider.top}px)`,
               }}
             />
 
@@ -154,7 +201,7 @@ export default function App() {
               className={`tab-btn ${activeTab === 'encrypt' ? 'active' : ''}`}
               onClick={() => setActiveTab('encrypt')}
             >
-              <Lock size={16} />
+              <Lock size={18} />
               Encrypt
             </button>
             <button
@@ -164,7 +211,7 @@ export default function App() {
               className={`tab-btn ${activeTab === 'decrypt' ? 'active' : ''}`}
               onClick={() => setActiveTab('decrypt')}
             >
-              <Unlock size={16} />
+              <Unlock size={18} />
               Decrypt
             </button>
             <button
@@ -174,7 +221,7 @@ export default function App() {
               className={`tab-btn ${activeTab === 'p2p' ? 'active' : ''}`}
               onClick={() => setActiveTab('p2p')}
             >
-              <Share2 size={16} />
+              <Share2 size={18} />
               P2P Simulator
             </button>
             <button
@@ -184,20 +231,10 @@ export default function App() {
               className={`tab-btn ${activeTab === 'ethernet' ? 'active' : ''}`}
               onClick={() => setActiveTab('ethernet')}
             >
-              <Network size={16} />
+              <Network size={18} />
               Ethernet LAN
             </button>
           </nav>
-
-          {/* Swipe hint dots — iOS page-control style, mobile only */}
-          <div className="swipe-hint" style={{ display: 'none' }}>
-            {TAB_ORDER.filter(tab => tab !== 'info').map((tab) => (
-              <span
-                key={tab}
-                className={`swipe-hint-dot ${activeTab === tab ? 'active' : ''}`}
-              />
-            ))}
-          </div>
 
           {/* Active Tab Panel — swipe zone */}
           <div
