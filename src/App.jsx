@@ -319,7 +319,30 @@ export default function App() {
                 An inspiring developer dedicated to creating privacy-first secure applications, crafting elegant user experiences, and bridging the gap between sophisticated backends and clean responsive frontends.
               </p>
               <div className="profile-links">
-                <a href="mailto:rajatava2006@gmail.com" className="profile-link-btn" id="contact-email-link">📧 Email</a>
+                <a
+                  href="mailto:rajatava2006@gmail.com"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    const email = 'rajatava2006@gmail.com';
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                      navigator.clipboard.writeText(email).then(() => {
+                        addToast('Email copied to clipboard! (rajatava2006@gmail.com)', 'success');
+                      }).catch(() => {
+                        addToast('Email: rajatava2006@gmail.com', 'info');
+                      });
+                    } else {
+                      addToast('Email: rajatava2006@gmail.com', 'info');
+                    }
+                    const gmailWin = window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${email}`, '_blank');
+                    if (!gmailWin) {
+                      window.location.href = `mailto:${email}`;
+                    }
+                  }}
+                  className="profile-link-btn"
+                  id="contact-email-link"
+                >
+                  📧 Email
+                </a>
                 <a href="https://github.com/rajatava06" target="_blank" rel="noopener noreferrer" className="profile-link-btn" id="contact-github-link">💻 GitHub</a>
               </div>
             </div>
