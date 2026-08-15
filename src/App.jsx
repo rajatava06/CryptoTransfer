@@ -96,67 +96,111 @@ export default function App() {
   }, [activeTab]);
 
 
+  const [swipeOffset, setSwipeOffset] = useState(0);
+  const [isSwiping, setIsSwiping] = useState(false);
+
   const swipeStartX = useRef(null);
   const swipeStartY = useRef(null);
   const swipeLocked = useRef(null); // 'h' | 'v' | null
   const activeTabRef = useRef(activeTab);
   useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
 
+  // Touch gesture handler for both nav-tabs bar and swipe-zone view container
   useEffect(() => {
-    const el = document.getElementById('swipe-zone');
-    if (!el) return;
+    const swipeZoneEl = document.getElementById('swipe-zone');
+    const navTabsEl = navRef.current;
+    if (!swipeZoneEl) return;
 
-    const onStart = (e) => {
+    let touchStartTime = 0;
+
+    const onTouchStart = (e) => {
+      if (e.touches.length !== 1) return;
       swipeStartX.current = e.touches[0].clientX;
       swipeStartY.current = e.touches[0].clientY;
+      touchStartTime = Date.now();
       swipeLocked.current = null;
+      setIsSwiping(false);
     };
 
-    const onMove = (e) => {
-      if (!swipeStartX.current) return;
-      const dx = e.touches[0].clientX - swipeStartX.current;
-      const dy = e.touches[0].clientY - swipeStartY.current;
+    const onTouchMove = (e) => {
+      if (swipeStartX.current === null) return;
+      const currentX = e.touches[0].clientX;
+      const currentY = e.touches[0].clientY;
+      const dx = currentX - swipeStartX.current;
+      const dy = currentY - swipeStartY.current;
 
-      // Lock direction on first significant movement
       if (!swipeLocked.current) {
-        if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+        if (Math.abs(dx) > 6 || Math.abs(dy) > 6) {
           swipeLocked.current = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
         }
       }
-      // Block native scroll only when we've committed to horizontal
+
       if (swipeLocked.current === 'h') {
-        e.preventDefault();
+        if (e.cancelable) e.preventDefault();
+        setIsSwiping(true);
+        const currentIndex = TAB_ORDER.indexOf(activeTabRef.current);
+        const isAtFirst = currentIndex === 0 && dx > 0;
+        const isAtLast = currentIndex === TAB_ORDER.length - 1 && dx < 0;
+
+        // Apply rubber-band damping if at edges
+        const effectiveDx = (isAtFirst || isAtLast) ? dx * 0.25 : dx;
+        setSwipeOffset(effectiveDx);
       }
     };
 
-    const onEnd = (e) => {
-      if (swipeLocked.current !== 'h' || swipeStartX.current === null) {
-        swipeStartX.current = null;
-        swipeStartY.current = null;
-        swipeLocked.current = null;
-        return;
+    const onTouchEnd = (e) => {
+      if (swipeStartX.current === null) return;
+      const touchEndTime = Date.now();
+      const dt = touchEndTime - touchStartTime;
+
+      if (swipeLocked.current === 'h') {
+        const dx = e.changedTouches[0].clientX - swipeStartX.current;
+        const velocity = Math.abs(dx) / (dt || 1);
+        const currentIndex = TAB_ORDER.indexOf(activeTabRef.current);
+        const threshold = window.innerWidth < 768 ? 35 : 60;
+
+        if (Math.abs(dx) > threshold || velocity > 0.35) {
+          if (dx < 0 && currentIndex < TAB_ORDER.length - 1) {
+            setActiveTab(TAB_ORDER[currentIndex + 1]);
+          } else if (dx > 0 && currentIndex > 0) {
+            setActiveTab(TAB_ORDER[currentIndex - 1]);
+          }
+        }
       }
-      const dx = e.changedTouches[0].clientX - swipeStartX.current;
-      if (Math.abs(dx) < 50) {
-        swipeStartX.current = null;
-        swipeLocked.current = null;
-        return;
-      }
-      const current = TAB_ORDER.indexOf(activeTabRef.current);
-      if (dx < 0 && current < TAB_ORDER.length - 1) setActiveTab(TAB_ORDER[current + 1]);
-      else if (dx > 0 && current > 0) setActiveTab(TAB_ORDER[current - 1]);
+
+      // Animate spring back to center offset
+      setIsSwiping(false);
+      setSwipeOffset(0);
       swipeStartX.current = null;
       swipeStartY.current = null;
       swipeLocked.current = null;
     };
 
-    el.addEventListener('touchstart', onStart, { passive: true });
-    el.addEventListener('touchmove', onMove, { passive: false });
-    el.addEventListener('touchend', onEnd, { passive: true });
+    // Attach to view container
+    swipeZoneEl.addEventListener('touchstart', onTouchStart, { passive: true });
+    swipeZoneEl.addEventListener('touchmove', onTouchMove, { passive: false });
+    swipeZoneEl.addEventListener('touchend', onTouchEnd, { passive: true });
+    swipeZoneEl.addEventListener('touchcancel', onTouchEnd, { passive: true });
+
+    // Attach directly to nav-tabs bar if present
+    if (navTabsEl) {
+      navTabsEl.addEventListener('touchstart', onTouchStart, { passive: true });
+      navTabsEl.addEventListener('touchmove', onTouchMove, { passive: false });
+      navTabsEl.addEventListener('touchend', onTouchEnd, { passive: true });
+      navTabsEl.addEventListener('touchcancel', onTouchEnd, { passive: true });
+    }
+
     return () => {
-      el.removeEventListener('touchstart', onStart);
-      el.removeEventListener('touchmove', onMove);
-      el.removeEventListener('touchend', onEnd);
+      swipeZoneEl.removeEventListener('touchstart', onTouchStart);
+      swipeZoneEl.removeEventListener('touchmove', onTouchMove);
+      swipeZoneEl.removeEventListener('touchend', onTouchEnd);
+      swipeZoneEl.removeEventListener('touchcancel', onTouchEnd);
+      if (navTabsEl) {
+        navTabsEl.removeEventListener('touchstart', onTouchStart);
+        navTabsEl.removeEventListener('touchmove', onTouchMove);
+        navTabsEl.removeEventListener('touchend', onTouchEnd);
+        navTabsEl.removeEventListener('touchcancel', onTouchEnd);
+      }
     };
   }, []);
 
@@ -178,7 +222,7 @@ export default function App() {
         <div className="container">
           {/* Navigation Tabs — iOS-26 glider */}
           <nav
-            className="nav-tabs"
+            className={`nav-tabs ${isSwiping ? 'swiping' : ''}`}
             aria-label="Main Navigation"
             ref={navRef}
           >
@@ -190,7 +234,8 @@ export default function App() {
                 opacity: glider.opacity,
                 width: glider.width,
                 height: glider.height,
-                transform: `translate(${glider.left}px, ${glider.top}px)`,
+                transform: `translate(${glider.left + swipeOffset * 0.15}px, ${glider.top}px)`,
+                transition: isSwiping ? 'none' : 'transform 0.38s cubic-bezier(0.34, 1.56, 0.64, 1), width 0.32s cubic-bezier(0.34, 1.56, 0.64, 1)'
               }}
             />
 
@@ -222,7 +267,7 @@ export default function App() {
               onClick={() => setActiveTab('p2p')}
             >
               <Share2 size={18} />
-              P2P Simulator
+              P2P
             </button>
             <button
               id="tab-ethernet-btn"
@@ -232,15 +277,30 @@ export default function App() {
               onClick={() => setActiveTab('ethernet')}
             >
               <Network size={18} />
-              Ethernet LAN
+              Ethernet
+            </button>
+            <button
+              id="tab-info-btn"
+              type="button"
+              ref={el => tabRefs.current['info'] = el}
+              className={`tab-btn ${activeTab === 'info' ? 'active' : ''}`}
+              onClick={() => setActiveTab('info')}
+            >
+              <HelpCircle size={18} />
+              Specs
             </button>
           </nav>
 
-          {/* Active Tab Panel — swipe zone */}
+          {/* Active Tab Panel — swipe zone with real-time iOS translation */}
           <div
             id="swipe-zone"
             className="active-view-container"
-            style={{ animation: 'fadeIn 0.3s', touchAction: 'pan-y pinch-zoom' }}
+            style={{
+              transform: `translateX(${swipeOffset}px)`,
+              transition: isSwiping ? 'none' : 'transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)',
+              touchAction: 'pan-y pinch-zoom',
+              willChange: 'transform'
+            }}
           >
             {activeTab === 'encrypt' && (
               <EncryptPanel
