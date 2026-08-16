@@ -6,10 +6,10 @@ import DecryptPanel from './components/DecryptPanel';
 import PeerSimulator from './components/PeerSimulator';
 import InfoPanel from './components/InfoPanel';
 import EthernetSimulator from './components/EthernetSimulator';
-import { Lock, Unlock, Share2, HelpCircle, X, Network, User } from 'lucide-react';
+import { Lock, Unlock, Share2, X, Network, User } from 'lucide-react';
 import './App.css';
 
-const TAB_ORDER = ['encrypt', 'decrypt', 'p2p', 'ethernet', 'info'];
+const TAB_ORDER = ['encrypt', 'decrypt', 'p2p', 'ethernet'];
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('encrypt');
@@ -160,7 +160,7 @@ export default function App() {
         const threshold = window.innerWidth < 768 ? 35 : 60;
 
         if (Math.abs(dx) > threshold || velocity > 0.35) {
-          if (dx < 0 && currentIndex < TAB_ORDER.length - 1) {
+          if (dx < 0 && currentIndex !== -1 && currentIndex < TAB_ORDER.length - 1) {
             setActiveTab(TAB_ORDER[currentIndex + 1]);
           } else if (dx > 0 && currentIndex > 0) {
             setActiveTab(TAB_ORDER[currentIndex - 1]);
@@ -278,16 +278,6 @@ export default function App() {
             >
               <Network size={18} />
               Ethernet
-            </button>
-            <button
-              id="tab-info-btn"
-              type="button"
-              ref={el => tabRefs.current['info'] = el}
-              className={`tab-btn ${activeTab === 'info' ? 'active' : ''}`}
-              onClick={() => setActiveTab('info')}
-            >
-              <HelpCircle size={18} />
-              Specs
             </button>
           </nav>
 

@@ -26,7 +26,7 @@ export default function Header({ activeTab, setActiveTab, setContactOpen }) {
   }, [activeTab]);
 
   const touchStartX = useRef(null);
-  const mobileTabs = ['encrypt', 'decrypt', 'p2p', 'ethernet', 'info'];
+  const mobileTabs = ['encrypt', 'decrypt', 'p2p', 'ethernet'];
 
   const handleTouchStart = (e) => {
     touchStartX.current = e.touches[0].clientX;
