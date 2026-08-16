@@ -6,7 +6,7 @@ import DecryptPanel from './components/DecryptPanel';
 import PeerSimulator from './components/PeerSimulator';
 import InfoPanel from './components/InfoPanel';
 import EthernetSimulator from './components/EthernetSimulator';
-import { Lock, Unlock, Share2, X, Network, User } from 'lucide-react';
+import { Lock, Unlock, Share2, X, Network, User, Github, Mail } from 'lucide-react';
 import './App.css';
 
 const TAB_ORDER = ['encrypt', 'decrypt', 'p2p', 'ethernet'];
@@ -391,9 +391,19 @@ export default function App() {
                   className="profile-link-btn"
                   id="contact-email-link"
                 >
-                  📧 Email
+                  <Mail size={16} />
+                  <span>Email</span>
                 </a>
-                <a href="https://github.com/rajatava06" target="_blank" rel="noopener noreferrer" className="profile-link-btn" id="contact-github-link">💻 GitHub</a>
+                <a
+                  href="https://github.com/rajatava06"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="profile-link-btn"
+                  id="contact-github-link"
+                >
+                  <Github size={16} />
+                  <span>GitHub</span>
+                </a>
               </div>
             </div>
           </div>

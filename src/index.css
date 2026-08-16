@@ -1361,6 +1361,10 @@ a:hover {
   color: var(--text-secondary);
   font-weight: 500;
   transition: var(--transition-fast);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
 }
 
 .profile-link-btn:hover {
