@@ -29,9 +29,21 @@ export default function App() {
   const tabRefs = useRef({});
   const [glider, setGlider] = useState({ left: 0, top: 0, width: 0, height: 0, opacity: 0 });
 
-  const updateGlider = () => {
+  // iOS-style hold & place gesture state for navigation bar
+  const [holdingTab, setHoldingTab] = useState(null);
+  const [isNavHolding, setIsNavHolding] = useState(false);
+
+  const activeTabRef = useRef(activeTab);
+  useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
+
+  const holdingTabRef = useRef(holdingTab);
+  useEffect(() => { holdingTabRef.current = holdingTab; }, [holdingTab]);
+
+  const targetGliderTab = isNavHolding && holdingTab ? holdingTab : activeTab;
+
+  const updateGlider = (targetTab = targetGliderTab) => {
     const navEl = navRef.current;
-    const activeEl = tabRefs.current[activeTab];
+    const activeEl = tabRefs.current[targetTab];
     if (!navEl || !activeEl) {
       setGlider(prev => ({ ...prev, opacity: 0 }));
       return;
@@ -50,13 +62,13 @@ export default function App() {
 
   useLayoutEffect(() => {
     const navEl = navRef.current;
-    const activeEl = tabRefs.current[activeTab];
+    const activeEl = tabRefs.current[targetGliderTab];
     if (!navEl || !activeEl) {
       setGlider(prev => ({ ...prev, opacity: 0 }));
       return;
     }
 
-    // Scroll active tab smoothly to center of navigation bar (WhatsApp iOS style)
+    // Scroll target tab smoothly to center of navigation bar
     const navWidth = navEl.clientWidth;
     const elLeft = activeEl.offsetLeft;
     const elWidth = activeEl.clientWidth;
@@ -67,15 +79,15 @@ export default function App() {
       behavior: 'smooth',
     });
 
-    updateGlider();
-  }, [activeTab]);
+    updateGlider(targetGliderTab);
+  }, [activeTab, holdingTab, isNavHolding]);
 
   useEffect(() => {
     const navEl = navRef.current;
     if (!navEl) return;
 
     const handleScroll = () => {
-      updateGlider();
+      updateGlider(targetGliderTab);
     };
 
     const handleWheel = (e) => {
@@ -86,121 +98,123 @@ export default function App() {
 
     navEl.addEventListener('scroll', handleScroll, { passive: true });
     navEl.addEventListener('wheel', handleWheel, { passive: true });
-    window.addEventListener('resize', updateGlider);
+    window.addEventListener('resize', () => updateGlider(targetGliderTab));
 
     return () => {
       navEl.removeEventListener('scroll', handleScroll);
       navEl.removeEventListener('wheel', handleWheel);
-      window.removeEventListener('resize', updateGlider);
+      window.removeEventListener('resize', () => updateGlider(targetGliderTab));
     };
-  }, [activeTab]);
+  }, [activeTab, holdingTab, isNavHolding]);
 
+  // Helper: map touch clientX to closest tab item on nav-tabs bar
+  const getTabFromClientX = (clientX) => {
+    let closestTab = TAB_ORDER[0];
+    let minDistance = Infinity;
 
-  const [swipeOffset, setSwipeOffset] = useState(0);
-  const [isSwiping, setIsSwiping] = useState(false);
-
-  const swipeStartX = useRef(null);
-  const swipeStartY = useRef(null);
-  const swipeLocked = useRef(null); // 'h' | 'v' | null
-  const activeTabRef = useRef(activeTab);
-  useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
-
-  // Touch gesture handler for both nav-tabs bar and swipe-zone view container
-  useEffect(() => {
-    const swipeZoneEl = document.getElementById('swipe-zone');
-    const navTabsEl = navRef.current;
-    if (!swipeZoneEl) return;
-
-    let touchStartTime = 0;
-
-    const onTouchStart = (e) => {
-      if (e.touches.length !== 1) return;
-      swipeStartX.current = e.touches[0].clientX;
-      swipeStartY.current = e.touches[0].clientY;
-      touchStartTime = Date.now();
-      swipeLocked.current = null;
-      setIsSwiping(false);
-    };
-
-    const onTouchMove = (e) => {
-      if (swipeStartX.current === null) return;
-      const currentX = e.touches[0].clientX;
-      const currentY = e.touches[0].clientY;
-      const dx = currentX - swipeStartX.current;
-      const dy = currentY - swipeStartY.current;
-
-      if (!swipeLocked.current) {
-        if (Math.abs(dx) > 6 || Math.abs(dy) > 6) {
-          swipeLocked.current = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
-        }
+    for (const tabKey of TAB_ORDER) {
+      const el = tabRefs.current[tabKey];
+      if (!el) continue;
+      const rect = el.getBoundingClientRect();
+      if (clientX >= rect.left && clientX <= rect.right) {
+        return tabKey;
       }
-
-      if (swipeLocked.current === 'h') {
-        if (e.cancelable) e.preventDefault();
-        setIsSwiping(true);
-        const currentIndex = TAB_ORDER.indexOf(activeTabRef.current);
-        const isAtFirst = currentIndex === 0 && dx > 0;
-        const isAtLast = currentIndex === TAB_ORDER.length - 1 && dx < 0;
-
-        // Apply rubber-band damping if at edges
-        const effectiveDx = (isAtFirst || isAtLast) ? dx * 0.25 : dx;
-        setSwipeOffset(effectiveDx);
+      const center = rect.left + rect.width / 2;
+      const dist = Math.abs(clientX - center);
+      if (dist < minDistance) {
+        minDistance = dist;
+        closestTab = tabKey;
       }
-    };
-
-    const onTouchEnd = (e) => {
-      if (swipeStartX.current === null) return;
-      const touchEndTime = Date.now();
-      const dt = touchEndTime - touchStartTime;
-
-      if (swipeLocked.current === 'h') {
-        const dx = e.changedTouches[0].clientX - swipeStartX.current;
-        const velocity = Math.abs(dx) / (dt || 1);
-        const currentIndex = TAB_ORDER.indexOf(activeTabRef.current);
-        const threshold = window.innerWidth < 768 ? 35 : 60;
-
-        if (Math.abs(dx) > threshold || velocity > 0.35) {
-          if (dx < 0 && currentIndex !== -1 && currentIndex < TAB_ORDER.length - 1) {
-            setActiveTab(TAB_ORDER[currentIndex + 1]);
-          } else if (dx > 0 && currentIndex > 0) {
-            setActiveTab(TAB_ORDER[currentIndex - 1]);
-          }
-        }
-      }
-
-      // Animate spring back to center offset
-      setIsSwiping(false);
-      setSwipeOffset(0);
-      swipeStartX.current = null;
-      swipeStartY.current = null;
-      swipeLocked.current = null;
-    };
-
-    // Attach to view container
-    swipeZoneEl.addEventListener('touchstart', onTouchStart, { passive: true });
-    swipeZoneEl.addEventListener('touchmove', onTouchMove, { passive: false });
-    swipeZoneEl.addEventListener('touchend', onTouchEnd, { passive: true });
-    swipeZoneEl.addEventListener('touchcancel', onTouchEnd, { passive: true });
-
-    // Attach directly to nav-tabs bar if present
-    if (navTabsEl) {
-      navTabsEl.addEventListener('touchstart', onTouchStart, { passive: true });
-      navTabsEl.addEventListener('touchmove', onTouchMove, { passive: false });
-      navTabsEl.addEventListener('touchend', onTouchEnd, { passive: true });
-      navTabsEl.addEventListener('touchcancel', onTouchEnd, { passive: true });
     }
+    return closestTab;
+  };
+
+  // Ultra-fluid iOS-style Hold & Place tab bar gesture effect
+  useEffect(() => {
+    const navTabsEl = navRef.current;
+    if (!navTabsEl) return;
+
+    let isTouchDraggingBar = false;
+    let isMouseDown = false;
+
+    const onNavTouchStart = (e) => {
+      if (e.touches.length !== 1) return;
+      isTouchDraggingBar = true;
+      const clientX = e.touches[0].clientX;
+      const initialTab = getTabFromClientX(clientX);
+      setIsNavHolding(true);
+      setHoldingTab(initialTab);
+      if ('vibrate' in navigator) navigator.vibrate(12);
+    };
+
+    const onNavTouchMove = (e) => {
+      if (!isTouchDraggingBar || e.touches.length !== 1) return;
+      if (e.cancelable) e.preventDefault();
+      const clientX = e.touches[0].clientX;
+      const currentTab = getTabFromClientX(clientX);
+      if (currentTab !== holdingTabRef.current) {
+        setHoldingTab(currentTab);
+        if ('vibrate' in navigator) navigator.vibrate(8);
+      }
+    };
+
+    const onNavTouchEnd = () => {
+      if (!isTouchDraggingBar) return;
+      isTouchDraggingBar = false;
+      const finalTab = holdingTabRef.current;
+      if (finalTab) {
+        setActiveTab(finalTab);
+      }
+      setIsNavHolding(false);
+      setHoldingTab(null);
+    };
+
+    // Mouse support for desktop hold & drag testing
+    const onMouseDown = (e) => {
+      if (e.button !== 0) return;
+      isMouseDown = true;
+      const initialTab = getTabFromClientX(e.clientX);
+      setIsNavHolding(true);
+      setHoldingTab(initialTab);
+    };
+
+    const onMouseMove = (e) => {
+      if (!isMouseDown) return;
+      const currentTab = getTabFromClientX(e.clientX);
+      if (currentTab !== holdingTabRef.current) {
+        setHoldingTab(currentTab);
+      }
+    };
+
+    const onMouseUp = () => {
+      if (!isMouseDown) return;
+      isMouseDown = false;
+      const finalTab = holdingTabRef.current;
+      if (finalTab) {
+        setActiveTab(finalTab);
+      }
+      setIsNavHolding(false);
+      setHoldingTab(null);
+    };
+
+    navTabsEl.addEventListener('touchstart', onNavTouchStart, { passive: true });
+    navTabsEl.addEventListener('touchmove', onNavTouchMove, { passive: false });
+    navTabsEl.addEventListener('touchend', onNavTouchEnd, { passive: true });
+    navTabsEl.addEventListener('touchcancel', onNavTouchEnd, { passive: true });
+
+    navTabsEl.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
 
     return () => {
-      swipeZoneEl.removeEventListener('touchstart', onTouchStart);
-      swipeZoneEl.removeEventListener('touchmove', onTouchMove);
-      swipeZoneEl.removeEventListener('touchend', onTouchEnd);
-      swipeZoneEl.removeEventListener('touchcancel', onTouchEnd);
-      if (navTabsEl) {
-        navTabsEl.removeEventListener('touchstart', onTouchStart);
-        navTabsEl.removeEventListener('touchmove', onTouchMove);
-        navTabsEl.removeEventListener('touchend', onTouchEnd);
-        navTabsEl.removeEventListener('touchcancel', onTouchEnd);
-      }
+      navTabsEl.removeEventListener('touchstart', onNavTouchStart);
+      navTabsEl.removeEventListener('touchmove', onNavTouchMove);
+      navTabsEl.removeEventListener('touchend', onNavTouchEnd);
+      navTabsEl.removeEventListener('touchcancel', onNavTouchEnd);
+
+      navTabsEl.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
     };
   }, []);
 
@@ -220,22 +234,24 @@ export default function App() {
 
       <main className="main-content">
         <div className="container">
-          {/* Navigation Tabs — iOS-26 glider */}
+          {/* Navigation Tabs — iOS Hold & Place interactive slider */}
           <nav
-            className={`nav-tabs ${isSwiping ? 'swiping' : ''}`}
+            className={`nav-tabs ${isNavHolding ? 'holding' : ''}`}
             aria-label="Main Navigation"
             ref={navRef}
           >
             {/* Glider pill */}
             <span
-              className="nav-glider"
+              className={`nav-glider ${isNavHolding ? 'holding' : ''}`}
               aria-hidden="true"
               style={{
                 opacity: glider.opacity,
                 width: glider.width,
                 height: glider.height,
-                transform: `translate(${glider.left + swipeOffset * 0.15}px, ${glider.top}px)`,
-                transition: isSwiping ? 'none' : 'transform 0.38s cubic-bezier(0.34, 1.56, 0.64, 1), width 0.32s cubic-bezier(0.34, 1.56, 0.64, 1)'
+                transform: `translate(${glider.left}px, ${glider.top}px)`,
+                transition: isNavHolding
+                  ? 'transform 0.16s cubic-bezier(0.18, 0.89, 0.32, 1.25), width 0.16s cubic-bezier(0.18, 0.89, 0.32, 1.25)'
+                  : 'transform 0.38s cubic-bezier(0.34, 1.56, 0.64, 1), width 0.32s cubic-bezier(0.34, 1.56, 0.64, 1)'
               }}
             />
 
@@ -243,7 +259,7 @@ export default function App() {
               id="tab-encrypt-btn"
               type="button"
               ref={el => tabRefs.current['encrypt'] = el}
-              className={`tab-btn ${activeTab === 'encrypt' ? 'active' : ''}`}
+              className={`tab-btn ${targetGliderTab === 'encrypt' ? 'active' : ''} ${isNavHolding && holdingTab === 'encrypt' ? 'holding-target' : ''}`}
               onClick={() => setActiveTab('encrypt')}
             >
               <Lock size={18} />
@@ -253,7 +269,7 @@ export default function App() {
               id="tab-decrypt-btn"
               type="button"
               ref={el => tabRefs.current['decrypt'] = el}
-              className={`tab-btn ${activeTab === 'decrypt' ? 'active' : ''}`}
+              className={`tab-btn ${targetGliderTab === 'decrypt' ? 'active' : ''} ${isNavHolding && holdingTab === 'decrypt' ? 'holding-target' : ''}`}
               onClick={() => setActiveTab('decrypt')}
             >
               <Unlock size={18} />
@@ -263,7 +279,7 @@ export default function App() {
               id="tab-p2p-btn"
               type="button"
               ref={el => tabRefs.current['p2p'] = el}
-              className={`tab-btn ${activeTab === 'p2p' ? 'active' : ''}`}
+              className={`tab-btn ${targetGliderTab === 'p2p' ? 'active' : ''} ${isNavHolding && holdingTab === 'p2p' ? 'holding-target' : ''}`}
               onClick={() => setActiveTab('p2p')}
             >
               <Share2 size={18} />
@@ -273,7 +289,7 @@ export default function App() {
               id="tab-ethernet-btn"
               type="button"
               ref={el => tabRefs.current['ethernet'] = el}
-              className={`tab-btn ${activeTab === 'ethernet' ? 'active' : ''}`}
+              className={`tab-btn ${targetGliderTab === 'ethernet' ? 'active' : ''} ${isNavHolding && holdingTab === 'ethernet' ? 'holding-target' : ''}`}
               onClick={() => setActiveTab('ethernet')}
             >
               <Network size={18} />
@@ -281,16 +297,10 @@ export default function App() {
             </button>
           </nav>
 
-          {/* Active Tab Panel — swipe zone with real-time iOS translation */}
+          {/* Active Tab Panel Container */}
           <div
             id="swipe-zone"
             className="active-view-container"
-            style={{
-              transform: `translateX(${swipeOffset}px)`,
-              transition: isSwiping ? 'none' : 'transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)',
-              touchAction: 'pan-y pinch-zoom',
-              willChange: 'transform'
-            }}
           >
             {activeTab === 'encrypt' && (
               <EncryptPanel
