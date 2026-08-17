@@ -296,8 +296,6 @@ export default function App() {
               Ethernet
             </button>
           </nav>
-
-          {/* Active Tab Panel Container */}
           <div
             id="swipe-zone"
             className="active-view-container"

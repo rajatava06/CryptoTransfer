@@ -19,6 +19,7 @@ export default function Footer() {
         <p style={{ fontSize: '0.75rem', marginTop: '0.5rem', opacity: 0.6 }}>
           All encryption is completed inside your browser. No plaintext data is ever sent to our servers.
         </p>
+        <p>Version 3.0</p>
       </div>
     </footer>
   );
