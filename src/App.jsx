@@ -250,8 +250,8 @@ export default function App() {
                 height: glider.height,
                 transform: `translate(${glider.left}px, ${glider.top}px)`,
                 transition: isNavHolding
-                  ? 'transform 0.16s cubic-bezier(0.18, 0.89, 0.32, 1.25), width 0.16s cubic-bezier(0.18, 0.89, 0.32, 1.25)'
-                  : 'transform 0.38s cubic-bezier(0.34, 1.56, 0.64, 1), width 0.32s cubic-bezier(0.34, 1.56, 0.64, 1)'
+                  ? 'transform 0.15s ease-out, width 0.15s ease-out'
+                  : 'transform 0.25s cubic-bezier(0.25, 1, 0.5, 1), width 0.25s cubic-bezier(0.25, 1, 0.5, 1)'
               }}
             />
 

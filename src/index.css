@@ -273,22 +273,22 @@ a:hover {
   display: none;
 }
 
-/* ── Glider pill — Apple continuous rounded sliding highlight ── */
+/* ── Glider pill — Clean continuous sliding highlight ── */
 .nav-glider {
   position: absolute;
   top: 0;
   left: 0;
-  border-radius: 16px; /* Apple continuous rounded pill inner */
+  border-radius: 16px; /* Apple icon continuous squircle */
   background: linear-gradient(135deg, rgba(6, 182, 212, 0.95) 0%, rgba(139, 92, 246, 0.95) 100%);
   box-shadow:
     0 4px 20px rgba(139, 92, 246, 0.45),
     0 0 0 1px rgba(168, 85, 247, 0.35),
     inset 0 1px 0 rgba(255, 255, 255, 0.35);
-  /* Spring-like easing — feels physically weighted */
+  /* Smooth standard switch transition */
   transition:
-    transform 0.38s cubic-bezier(0.34, 1.56, 0.64, 1),
-    width     0.32s cubic-bezier(0.34, 1.56, 0.64, 1),
-    height    0.32s cubic-bezier(0.34, 1.56, 0.64, 1),
+    transform 0.25s cubic-bezier(0.25, 1, 0.5, 1),
+    width     0.25s cubic-bezier(0.25, 1, 0.5, 1),
+    height    0.25s cubic-bezier(0.25, 1, 0.5, 1),
     opacity   0.2s ease;
   pointer-events: none;
   z-index: 0;
@@ -310,46 +310,27 @@ a:hover {
   pointer-events: none;
 }
 
-/* iOS Hold & Place press & drag active states */
+/* Hold & Place active states — clean & direct */
 .nav-glider.holding {
-  background: linear-gradient(135deg, rgba(99, 102, 241, 1) 0%, rgba(168, 85, 247, 1) 50%, rgba(244, 63, 94, 1) 100%);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.98) 0%, rgba(168, 85, 247, 0.98) 100%);
   box-shadow:
-    0 8px 30px rgba(168, 85, 247, 0.7),
-    0 0 0 2px rgba(255, 255, 255, 0.75),
-    inset 0 1.5px 0 rgba(255, 255, 255, 0.85);
-  filter: brightness(1.15) saturate(130%);
-  /* Squish/press physical touch response */
-  transform: scale(0.95, 0.92) !important;
-  animation: gliderPulse 1.2s infinite alternate ease-in-out;
-}
-
-@keyframes gliderPulse {
-  0% {
-    box-shadow: 0 8px 30px rgba(168, 85, 247, 0.7), 0 0 0 2px rgba(255, 255, 255, 0.75), inset 0 1.5px 0 rgba(255, 255, 255, 0.85);
-  }
-  100% {
-    box-shadow: 0 10px 36px rgba(236, 72, 153, 0.85), 0 0 0 2.5px rgba(255, 255, 255, 0.9), inset 0 2px 0 rgba(255, 255, 255, 0.95);
-  }
+    0 6px 24px rgba(168, 85, 247, 0.55),
+    0 0 0 1.5px rgba(255, 255, 255, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  filter: brightness(1.1);
 }
 
 .nav-tabs.holding {
   cursor: grabbing;
-  box-shadow: 0 18px 44px -4px rgba(99, 102, 241, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.35);
-  border-color: rgba(255, 255, 255, 0.35);
-  transform: scale(0.995);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .tab-btn.holding-target {
   color: #ffffff !important;
   font-weight: 600;
-  transform: scale(1.08) translateY(-1px);
-  text-shadow: 0 0 16px rgba(255, 255, 255, 0.9);
 }
 
 .tab-btn.holding-target svg {
-  transform: scale(1.2) rotate(-6deg);
-  transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform 0.18s cubic-bezier(0.25, 1, 0.5, 1);
   filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.8));
 }
 
