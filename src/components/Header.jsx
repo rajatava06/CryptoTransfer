@@ -176,7 +176,7 @@ export default function Header({ activeTab, setActiveTab, setContactOpen }) {
             </button>
             <button
               type="button"
-              className={`mobile-menu-item ${activeTab === 'info' ? 'active' : ''}`}
+              className="mobile-menu-item"
               onClick={() => {
                 setActiveTab('info');
                 setMenuOpen(false);
