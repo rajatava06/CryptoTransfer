@@ -1487,30 +1487,30 @@ a:hover {
     min-width: 40px;
     min-height: 40px;
     border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(20, 30, 50, 0.88);
     color: var(--text-primary);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    transition: background 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     -webkit-tap-highlight-color: transparent !important;
+    position: relative;
+    z-index: 101;
   }
 
   .hamburger-btn:hover,
   .hamburger-btn.open {
-    background: rgba(255, 255, 255, 0.12);
-    border-color: rgba(56, 189, 248, 0.4);
+    background: rgba(30, 42, 68, 0.96);
+    border-color: rgba(56, 189, 248, 0.5);
     color: var(--cyan-primary);
-    box-shadow: 0 4px 16px rgba(56, 189, 248, 0.2);
+    box-shadow: 0 4px 16px rgba(56, 189, 248, 0.25);
   }
 
   .hamburger-btn:active {
-    transform: scale(0.92);
+    transform: scale(0.94);
   }
 
   /* ── Click-away overlay ── */
@@ -1518,9 +1518,7 @@ a:hover {
     position: fixed;
     inset: 0;
     z-index: 99;
-    background: rgba(0, 0, 0, 0.25);
-    backdrop-filter: blur(2px);
-    -webkit-backdrop-filter: blur(2px);
+    background: rgba(0, 0, 0, 0.4);
     animation: dropdownFadeIn 0.2s ease-out forwards;
   }
 
