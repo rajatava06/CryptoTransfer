@@ -149,39 +149,45 @@ export default function Header({ activeTab, setActiveTab, setContactOpen }) {
         </div>
       </div>
 
-      {/* Mobile Dropdown Menu — swipeable */}
+      {/* Mobile Dropdown Menu — Glassmorphic floating menu */}
       {menuOpen && (
-        <div
-          className="mobile-menu-dropdown"
-          id="mobile-navigation-dropdown"
-          onTouchStart={handleTouchStart}
-          onTouchEnd={handleTouchEnd}
-        >
-          <button
-            type="button"
-            className="mobile-menu-item"
-            onClick={() => {
-              setContactOpen(true);
-              setMenuOpen(false);
-            }}
-            id="mobile-contact-btn"
+        <>
+          <div
+            className="mobile-dropdown-overlay"
+            onClick={() => setMenuOpen(false)}
+          />
+          <div
+            className="mobile-menu-dropdown"
+            id="mobile-navigation-dropdown"
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
           >
-            <User size={16} />
-            Contact Developer
-          </button>
-          <button
-            type="button"
-            className={`mobile-menu-item ${activeTab === 'info' ? 'active' : ''}`}
-            onClick={() => {
-              setActiveTab('info');
-              setMenuOpen(false);
-            }}
-            id="mobile-specs-btn"
-          >
-            <HelpCircle size={16} />
-            Security Specs
-          </button>
-        </div>
+            <button
+              type="button"
+              className="mobile-menu-item"
+              onClick={() => {
+                setContactOpen(true);
+                setMenuOpen(false);
+              }}
+              id="mobile-contact-btn"
+            >
+              <span className="mobile-menu-icon"><User size={17} /></span>
+              <span>Contact Developer</span>
+            </button>
+            <button
+              type="button"
+              className={`mobile-menu-item ${activeTab === 'info' ? 'active' : ''}`}
+              onClick={() => {
+                setActiveTab('info');
+                setMenuOpen(false);
+              }}
+              id="mobile-specs-btn"
+            >
+              <span className="mobile-menu-icon"><HelpCircle size={17} /></span>
+              <span>Security Specs</span>
+            </button>
+          </div>
+        </>
       )}
     </header>
   );

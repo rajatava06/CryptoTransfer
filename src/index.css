@@ -1481,23 +1481,138 @@ a:hover {
     height: 6px;
   }
 
+  /* ── Hamburger toggle button ── */
   .hamburger-btn {
-    padding: 0.45rem;
-    min-width: 36px;
-    min-height: 36px; /* accessible touch target */
+    padding: 0.5rem;
+    min-width: 40px;
+    min-height: 40px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    -webkit-tap-highlight-color: transparent !important;
   }
 
-  /* ── Mobile menu dropdown ── */
+  .hamburger-btn:hover,
+  .hamburger-btn.open {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(56, 189, 248, 0.4);
+    color: var(--cyan-primary);
+    box-shadow: 0 4px 16px rgba(56, 189, 248, 0.2);
+  }
+
+  .hamburger-btn:active {
+    transform: scale(0.92);
+  }
+
+  /* ── Click-away overlay ── */
+  .mobile-dropdown-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 99;
+    background: rgba(0, 0, 0, 0.25);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    animation: dropdownFadeIn 0.2s ease-out forwards;
+  }
+
+  @keyframes dropdownFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  /* ── Mobile Menu Floating Glass Card ── */
   .mobile-menu-dropdown {
-    padding: 0.75rem 1rem 1rem;
-    gap: 0.4rem;
+    position: absolute;
+    top: calc(100% + 0.5rem);
+    right: 1rem;
+    min-width: 230px;
+    padding: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(15, 22, 38, 0.94);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    box-shadow:
+      0 20px 48px -8px rgba(0, 0, 0, 0.75),
+      0 0 0 1px rgba(0, 0, 0, 0.4),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    z-index: 100;
+    animation: menuSlideDown 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    transform-origin: top right;
+  }
+
+  @keyframes menuSlideDown {
+    from {
+      opacity: 0;
+      transform: translateY(-8px) scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
   }
 
   .mobile-menu-item {
-    padding: 0.85rem 1rem;
-    font-size: 0.92rem;
-    min-height: 48px; /* WCAG AA touch target */
-    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    min-height: 46px;
+    border-radius: 12px;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-secondary);
+    font-family: var(--font-heading);
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    width: 100%;
+    text-align: left;
+    -webkit-tap-highlight-color: transparent !important;
+  }
+
+  .mobile-menu-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-secondary);
+    transition: all 0.2s ease;
+  }
+
+  .mobile-menu-item:hover,
+  .mobile-menu-item.active {
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.12) 0%, rgba(168, 85, 247, 0.12) 100%);
+    color: #ffffff;
+    font-weight: 600;
+    border-color: rgba(56, 189, 248, 0.25);
+  }
+
+  .mobile-menu-item:hover .mobile-menu-icon,
+  .mobile-menu-item.active .mobile-menu-icon {
+    background: linear-gradient(135deg, var(--cyan-primary), var(--purple-primary));
+    color: var(--bg-darker);
+    box-shadow: 0 4px 12px rgba(56, 189, 248, 0.3);
+  }
+
+  .mobile-menu-item:active {
+    transform: scale(0.97);
   }
 
   /* ── Mobile Top Floating Rounded Pill Bar (≤ 768px) ── */
