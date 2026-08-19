@@ -1224,28 +1224,16 @@ a:hover {
 }
 
 .hamburger-btn {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--border-dim);
-  border-radius: 8px;
+  background: transparent;
+  border: none;
+  border-radius: 0.5rem;
   padding: 0.4rem;
   color: var(--text-primary);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: var(--transition-fast);
-}
-
-.hamburger-btn {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--border-dim);
-  border-radius: 0.5rem;
-  color: var(--text-secondary);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background var(--transition-fast), border-color var(--transition-fast);
+  transition: color var(--transition-fast);
 }
 
 .hamburger-btn svg {
@@ -1257,8 +1245,8 @@ a:hover {
 }
 
 .hamburger-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text-primary);
+  background: transparent;
+  color: var(--cyan-primary);
 }
 
 .mobile-menu-dropdown {
@@ -1487,15 +1475,15 @@ a:hover {
     min-width: 40px;
     min-height: 40px;
     border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    background: rgba(20, 30, 50, 0.88);
+    border: none;
+    background: transparent;
     color: var(--text-primary);
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: background 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    transition: color 0.2s ease, transform 0.15s ease;
+    box-shadow: none;
     -webkit-tap-highlight-color: transparent !important;
     position: relative;
     z-index: 101;
@@ -1503,10 +1491,10 @@ a:hover {
 
   .hamburger-btn:hover,
   .hamburger-btn.open {
-    background: rgba(30, 42, 68, 0.96);
-    border-color: rgba(56, 189, 248, 0.5);
+    background: transparent;
+    border-color: transparent;
     color: var(--cyan-primary);
-    box-shadow: 0 4px 16px rgba(56, 189, 248, 0.25);
+    box-shadow: none;
   }
 
   .hamburger-btn:active {
